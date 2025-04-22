@@ -1,0 +1,74 @@
+# 环境变量文件
+.env
+.env.*
+!.env.example
+
+# Python缓存文件
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# 虚拟环境
+venv/
+ENV/
+env/
+
+# IDE文件
+.idea/
+.vscode/
+*.swp
+*.swo
+.project
+.pydevproject
+.settings/
+
+# 操作系统文件
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 输出和临时文件
+output/
+output/**/*
+temp/
+*.mp4
+*.mp3
+*.wav
+*.jpg
+*.png
+*.webp
+*.log
+
+# 已有的输入输出目录，但保留目录结构
+input_texts/*
+!input_texts/.gitkeep
+input_images/*
+!input_images/.gitkeep
+
+# 嵌套的Narra-Sync目录
+Narra-Sync/
+
+# API密钥和敏感信息
+api_keys.json
+config_secrets.ini
+credentials.json
+token.json
+secret_* 
+.env

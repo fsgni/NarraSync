@@ -1,0 +1,9 @@
+openai>=1.20.0
+python-dotenv>=0.15.0
+pydub>=0.25.1
+# 以下为原有的依赖项
+# 语音生成
+requests>=2.25.1
+# 视频处理
+moviepy>=1.0.3
+ffmpeg-python>=0.2.0 

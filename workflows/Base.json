@@ -1,0 +1,139 @@
+{
+  "3": {
+    "inputs": {
+      "seed": 771586493607615,
+      "steps": 20,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": [
+        "10",
+        0
+      ],
+      "positive": [
+        "6",
+        0
+      ],
+      "negative": [
+        "7",
+        0
+      ],
+      "latent_image": [
+        "16",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KSampler"
+    }
+  },
+  "6": {
+    "inputs": {
+      "text": "In a quaint, rustic cottage nestled on the edge of a vibrant green forest, an elderly woman with silver hair sat at a wooden table. Her face, lined with age, showed a mix of concern and affection as she looked at the three little pigs gathered around her. Each pig, round and fluffy, had a different colored coat: one was pink, one was brown, and the last was black. Their small eyes were filled with curiosity and a hint of worry.\\n\\nThe cottage's interior was cozy but sparse, with a few worn-out chairs and a fireplace that had long gone cold. The walls were adorned with faded photographs of happier times, reminding the old woman of days when the pantry was full. Sunlight streamed through the small window, illuminating dust motes dancing in the air, but the warmth of the light couldn't dispel the anxiety that lingered in the room.\\n\\n“There's nothing left to eat in this house,” she said softly, her voice trembling slightly. The little pigs exchanged worried glances, their ears drooping at the thought of hunger. It was a pivotal moment; they understood that they needed to venture out into the world to find food.\\n\\nThe atmosphere was thick with a sense of urgency and determination. The sunlight, although bright, seemed to cast long shadows, reflecting the uncertainty of their situation. The three pigs, realizing they had to take action, stood up, ready to leave the safety of their home in search of sustenance.",
+      "clip": [
+        "11",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "7": {
+    "inputs": {
+      "text": "text, watermark",
+      "clip": [
+        "11",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "8": {
+    "inputs": {
+      "samples": [
+        "3",
+        0
+      ],
+      "vae": [
+        "14",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "9": {
+    "inputs": {
+      "filename_prefix": "ComfyUI",
+      "images": [
+        "8",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save Image"
+    }
+  },
+  "10": {
+    "inputs": {
+      "unet_name": "flux1-dev.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Load Diffusion Model"
+    }
+  },
+  "11": {
+    "inputs": {
+      "clip_name1": "t5xxl_fp16.safetensors",
+      "clip_name2": "clip_l.safetensors",
+      "type": "flux"
+    },
+    "class_type": "DualCLIPLoader",
+    "_meta": {
+      "title": "DualCLIPLoader"
+    }
+  },
+  "14": {
+    "inputs": {
+      "vae_name": "ae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "16": {
+    "inputs": {
+      "width": 1920,
+      "height": 1080,
+      "batch_size": 1
+    },
+    "class_type": "EmptyLatentImage",
+    "_meta": {
+      "title": "Empty Latent Image"
+    }
+  },
+  "17": {
+    "inputs": {
+      "lora_name": "adilson-farias-flux1-dev-v1-000088.safetensors",
+      "strength_model": 1,
+      "strength_clip": 1
+    },
+    "class_type": "LoraLoader",
+    "_meta": {
+      "title": "Load LoRA"
+    }
+  }
+}

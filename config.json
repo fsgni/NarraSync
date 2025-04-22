@@ -1,0 +1,84 @@
+{
+  "services": {
+    "voicevox": {
+      "host": "localhost",
+      "port": 50021,
+      "default_speaker": 13
+    },
+    "comfyui": {
+      "host": "localhost",
+      "port": 8188,
+      "default_style": "电影"
+    },
+    "midjourney": {
+      "mode": "api",
+      "api_url": "https://api.example.com/midjourney",
+      "api_key": ""
+    },
+    "openai": {
+      "api_key": "",
+      "tts_model": "gpt-4o-mini-tts",
+      "default_voice": 1
+    }
+  },
+  "paths": {
+    "input_texts": "input_texts",
+    "input_images": "input_images",
+    "output": "output",
+    "output_images": "output/images",
+    "output_audio": "output/audio",
+    "output_videos": "output/videos",
+    "dictionaries": "dictionaries",
+    "fonts": "fonts",
+    "workflows": "workflows",
+    "temporary": "temp"
+  },
+  "video": {
+    "resolution": [
+      1920,
+      1080
+    ],
+    "fps": 30,
+    "default_engine": "auto",
+    "default_font": {
+      "name": "UD Digi Kyokasho N-B",
+      "size": 18,
+      "color": "FFFFFF",
+      "bg_opacity": 0.5
+    }
+  },
+  "image": {
+    "default_generator": "comfyui",
+    "styles": {
+      "电影级品质": "cinematic lighting, movie quality, professional photography, 8k ultra HD",
+      "水墨画风格": "traditional Chinese ink painting style, elegant, flowing ink, minimalist",
+      "油画风格": "oil painting style, detailed brushwork, rich colors, artistic",
+      "动漫风格": "anime style, vibrant colors, clean lines, expressive",
+      "写实风格": "photorealistic, highly detailed, sharp focus, natural lighting",
+      "梦幻风格": "dreamy atmosphere, soft lighting, ethereal colors, mystical"
+    },
+    "comfyui_styles": {
+      "水墨": "写实水墨水彩风格_F1_水墨.safetensors",
+      "手绘": "星揽_手绘线条小清新漫画风格V2_v1.0.safetensors",
+      "古风": "中国古典风格滤镜_flux_V1.0.safetensors",
+      "插画": "Illustration_story book.safetensors",
+      "写实": "adilson-farias-flux1-dev-v1-000088.safetensors",
+      "电影": "Cinematic style 3 (FLUX).safetensors"
+    }
+  },
+  "processing": {
+    "max_retries": 3,
+    "retry_delay": 1.0,
+    "timeout": 30.0
+  },
+  "ui": {
+    "default_font": "SimHei",
+    "default_font_size": 24,
+    "default_font_color": "FFFFFF",
+    "default_bg_opacity": 0.5
+  },
+  "debug": {
+    "verbose_logging": false,
+    "save_intermediate_files": false
+  }
+}
