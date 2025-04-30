@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voicevox 脚本校对与词典编辑器</title>
+    <!-- <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"> -->
+    <style>
+        /* Figma-inspired Dark Theme */
+        :root {
+            /* Figma-like Color Palette (Approximated) */
+            --figma-bg-main: #1E1E1E; /* Primary background */
+            --figma-bg-panel: #252525; /* Slightly lighter for panels/columns */
+            --figma-bg-input: #2D2D2D; /* Input background */
+            --figma-text-primary: #E0E0E0; /* Primary text */
+            --figma-text-secondary: #A0A0A0; /* Secondary text (labels, placeholders) */
+            --figma-border-subtle: #333333; /* Subtle borders */
+            --figma-border-medium: #444444;
+            --figma-accent-blue: #0D99FF; /* Figma blue */
+            --figma-accent-blue-hover: #007ACC; /* Darker blue */
+            --figma-error-red: #F24822;
+            --figma-success-green: #1BC47D;
+            --figma-button-secondary-bg: #333333;
+            --figma-button-secondary-hover-bg: #444444;
+        }
+
+        /* Global Reset & Font */
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            font-size: 14px; /* Figma often uses smaller base font */
+            line-height: 1.5;
+            background-color: var(--figma-bg-main);
+            color: var(--figma-text-primary);
+            padding: 24px; /* More padding */
+            display: flex;
+            gap: 24px; /* More gap */
+        }
+
+        /* Layout Columns */
+        .column {
+            flex: 1;
+            background-color: var(--figma-bg-panel);
+            border: 1px solid var(--figma-border-subtle);
+            border-radius: 6px; /* Slightly more rounded */
+            padding: 24px;
+            overflow-y: auto; 
+            max-height: calc(100vh - 48px); /* Adjust height based on padding */
+        }
+        .column-left { flex: 2; }
+
+        /* Headings & Text */
+        h2, h3 {
+            color: var(--figma-text-primary);
+            font-weight: 600; /* Semi-bold */
+            margin-bottom: 16px;
+        }
+        h2 { font-size: 1.4em; }
+        h3 { font-size: 1.1em; margin-top: 24px; }
+        label {
+            display: block; /* Labels on their own line */
+            color: var(--figma-text-secondary);
+            font-weight: 500;
+            margin-bottom: 6px;
+        }
+        p { color: var(--figma-text-secondary); margin-bottom: 16px; }
+        hr { border: 0; border-top: 1px solid var(--figma-border-subtle); margin: 24px 0; }
+
+        /* Form Elements */
+        textarea, select, input[type=text], input[type=number] {
+            width: 100%; /* Full width */
+            background-color: var(--figma-bg-input);
+            color: var(--figma-text-primary);
+            border: 1px solid var(--figma-border-subtle);
+            border-radius: 4px;
+            padding: 10px 12px; /* Consistent padding */
+            margin-bottom: 16px; /* Consistent margin */
+            font-size: inherit; /* Inherit body font size */
+        }
+        textarea { resize: vertical; min-height: 150px; }
+        select:focus, input:focus, textarea:focus {
+             border-color: var(--figma-accent-blue);
+             outline: none; 
+             box-shadow: 0 0 0 2px rgba(13, 153, 255, 0.3); /* Subtle focus ring */
+        }
+        ::placeholder { color: var(--figma-text-secondary); opacity: 0.7; }
+
+        /* Buttons */
+        button {
+            font-size: inherit;
+            font-weight: 500;
+            padding: 9px 16px; /* Adjusted padding */
+            margin-right: 8px;
+            margin-bottom: 8px; /* Added margin bottom */
+            cursor: pointer;
+            border: none;
+            border-radius: 4px;
+            transition: background-color 0.15s ease, color 0.15s ease;
+        }
+        /* Primary Button Style (Default) */
+        button#process-script-btn, button#add-word-btn {
+            background-color: var(--figma-accent-blue);
+            color: white;
+        }
+        button#process-script-btn:hover, button#add-word-btn:hover {
+            background-color: var(--figma-accent-blue-hover);
+        }
+        /* Secondary Button Style */
+        button#refresh-speakers-btn, button#refresh-dict-btn, button#clear-form-btn {
+            background-color: var(--figma-button-secondary-bg);
+            color: var(--figma-text-primary);
+        }
+        button#refresh-speakers-btn:hover, button#refresh-dict-btn:hover, button#clear-form-btn:hover {
+            background-color: var(--figma-button-secondary-hover-bg);
+        }
+        /* Disabled Button Style */
+        button:disabled {
+            background-color: var(--figma-bg-input); /* Use input bg for disabled */
+            color: var(--figma-text-secondary);
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
+        /* Line Preview Area */
+        #line-preview-area {
+            max-height: 250px; /* Slightly reduced height */
+            overflow-y: auto;
+            border: 1px solid var(--figma-border-subtle);
+            background-color: var(--figma-bg-input);
+            margin-bottom: 16px;
+            padding: 8px 12px;
+            border-radius: 4px;
+        }
+        #line-preview-area > div {
+            border-bottom: 1px solid var(--figma-border-subtle);
+            padding: 10px 0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        #line-preview-area > div:last-child { border-bottom: none; }
+        #line-preview-area button { /* Smaller, secondary style buttons */
+            margin-left: 12px;
+            padding: 4px 8px;
+            font-size: 0.85em;
+            background-color: var(--figma-button-secondary-bg);
+            color: var(--figma-text-primary);
+        }
+        #line-preview-area button:hover { background-color: var(--figma-button-secondary-hover-bg); }
+        #line-preview-area p[style*="color: grey"] { 
+             color: var(--figma-text-secondary); 
+             text-align: center;
+             padding: 20px;
+             opacity: 0.7;
+        }
+
+        /* Dictionary Table */
+        #dict-table-wrapper {
+            max-height: 280px; /* Slightly reduced height */
+            overflow-y: auto;
+            margin-top: 16px;
+            border: 1px solid var(--figma-border-subtle);
+            border-radius: 4px;
+        }
+        #dict-table {
+            width: 100%;
+            border-collapse: collapse; /* Use collapse for cleaner lines */
+        }
+        #dict-table th, #dict-table td {
+            border-bottom: 1px solid var(--figma-border-subtle); /* Only bottom border */
+            padding: 10px 12px;
+            text-align: left;
+            font-size: 0.95em;
+        }
+        #dict-table th {
+            background-color: var(--figma-bg-panel); /* Match column bg */
+            font-weight: 600;
+            color: var(--figma-text-primary);
+            position: sticky;
+            top: 0; 
+        }
+        #dict-table td { color: var(--figma-text-secondary); } 
+        #dict-table td:first-child { color: var(--figma-text-primary); } /* Make surface text primary */
+        #dict-table tr:last-child td { border-bottom: none; }
+        #dict-table button { /* Smaller buttons in table */
+             padding: 4px 8px;
+             font-size: 0.85em;
+             background-color: var(--figma-button-secondary-bg);
+             color: var(--figma-text-primary);
+        }
+        #dict-table button:hover { background-color: var(--figma-button-secondary-hover-bg); }
+         #dict-tbody tr[style*="color: grey"] td { 
+             color: var(--figma-text-secondary); 
+             opacity: 0.7;
+             text-align: center;
+             padding: 20px;
+        }
+
+        /* Status Area */
+        #status {
+            margin-bottom: 20px;
+            padding: 12px 16px;
+            border: 1px solid var(--figma-border-subtle);
+            background-color: var(--figma-bg-input);
+            min-height: 40px;
+            border-radius: 4px;
+            line-height: 1.4;
+            color: var(--figma-text-secondary);
+        }
+        #status[style*="color: red"] {
+            border-color: var(--figma-error-red);
+            background-color: rgba(242, 72, 34, 0.1);
+            color: var(--figma-error-red) !important; 
+        }
+        #status[style*="color: green"] {
+            border-color: var(--figma-success-green);
+            background-color: rgba(27, 196, 125, 0.1);
+            color: var(--figma-success-green) !important; 
+        }
+
+        /* Range Slider */
+        input[type=range] {
+            width: calc(100% - 40px); /* Adjust width to align with span */
+            vertical-align: middle;
+            cursor: pointer;
+        }
+        #priority-value { margin-left: 8px; display: inline-block; width: 20px; text-align: right;}
+        
+        /* Audio Player - Very basic, styling is highly browser-dependent */
+        audio {
+           width: 100%;
+           margin-top: 16px;
+           /* Trying a slightly different filter, may need adjustment */
+           /* filter: contrast(0.8) invert(1) grayscale(0.5) brightness(1.5); */
+        }
+    </style>
+</head>
+<body>
+
+    <div class="column column-left">
+        <h2>脚本处理与预览</h2>
+        <div id="status">连接状态：检查中...</div>
+
+        <label for="script-input">1. 输入脚本:</label><br>
+        <textarea id="script-input" rows="15" placeholder="请在此处输入您的日文脚本..."></textarea><br>
+
+        <label for="speaker-select">选择说话人:</label>
+        <select id="speaker-select">
+            <option value="">加载中...</option>
+        </select>
+        <button id="refresh-speakers-btn">刷新</button>
+        <br><br>
+        <button id="process-script-btn">处理脚本</button>
+        <hr>
+
+        <h3>2. 预览与交互</h3>
+        <div id="line-preview-area">
+            <!-- 脚本行将动态添加到这里 -->
+            <p style="color: grey;">点击"处理脚本"后，脚本行将显示在此处。</p>
+        </div>
+        <br>
+        <audio id="audio-player" controls style="width: 100%;" src=""></audio> <!-- 添加空的 src -->
+
+    </div>
+
+    <div class="column">
+        <h2>用户词典编辑</h2>
+        <form id="dict-editor-form">
+             <h3>3. 词典编辑</h3>
+             <p>点击预览区的"编辑"按钮，或手动填写下方表单来添加/修改。</p>
+             <label for="surface">表面形式:</label><br>
+             <input type="text" id="surface" name="surface" required><br>
+             <label for="pronunciation">发音 (片假名):</label><br>
+             <input type="text" id="pronunciation" name="pronunciation" required><br>
+             <label for="accent_type">声调类型:</label><br>
+             <input type="number" id="accent_type" name="accent_type" value="0" required><br>
+             <label for="word_type">词语类型:</label><br>
+             <select id="word_type" name="word_type">
+                 <option value="PROPER_NOUN" selected>PROPER_NOUN</option>
+                 <option value="COMMON_NOUN">COMMON_NOUN</option>
+                 <option value="VERB">VERB</option>
+                 <option value="ADJECTIVE">ADJECTIVE</option>
+                 <option value="SUFFIX">SUFFIX</option>
+                 <option value="USER">USER</option>
+             </select><br>
+             <label for="priority">优先级:</label><br>
+             <input type="range" id="priority" name="priority" min="0" max="10" value="5" style="width: 80%;"><span id="priority-value">5</span><br>
+             <input type="hidden" id="uuid" name="uuid"> <!-- 用于更新/删除 -->
+             <button type="button" id="add-word-btn">添加新词条</button>
+             <button type="button" id="update-word-btn" disabled>更新词条 (待)</button>
+             <button type="button" id="delete-word-btn" disabled>删除词条 (待)</button>
+             <button type="button" id="clear-form-btn">清空表单</button>
+        </form>
+        <hr>
+         <h3>4. 当前用户词典</h3>
+         <button id="refresh-dict-btn">刷新词典列表</button>
+         <div id="dict-table-wrapper"> <!-- 表格容器 -->
+             <table id="dict-table">
+                 <thead>
+                     <tr>
+                         <th>表面形式</th>
+                         <th>发音</th>
+                         <th>声调</th>
+                         <th>类型</th>
+                         <th>优先级</th>
+                         <th>UUID</th>
+                         <th>操作</th>
+                     </tr>
+                 </thead>
+                 <tbody id="dict-tbody">
+                     <!-- 词典条目将动态添加到这里 -->
+                      <tr><td colspan="7" style="text-align: center; color: grey;">点击"刷新词典列表"加载...</td></tr>
+                 </tbody>
+             </table>
+         </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html> 

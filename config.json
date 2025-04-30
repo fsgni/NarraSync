@@ -35,8 +35,8 @@
   },
   "video": {
     "resolution": [
-      1920,
-      1080
+      1080,
+      1920
     ],
     "fps": 30,
     "default_engine": "auto",

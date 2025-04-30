@@ -6,6 +6,7 @@ import random
 import string
 from pathlib import Path
 from dotenv import load_dotenv
+import asyncio
 
 class MidjourneyGenerator:
     def __init__(self, host=None, port=None):
@@ -85,8 +86,10 @@ class MidjourneyGenerator:
             result = response.json()
             
             if result.get("code") not in [1, 22]:  # 1=成功，22=排队中
-                error_msg = f"任务提交失败: {result.get('description', '未知错误')}"
-                print(error_msg)
+                error_code = result.get("code", "未知代码")
+                error_desc = result.get('description', '未知错误')
+                # 修改打印信息，包含错误代码
+                print(f"!!! 任务提交失败! 代理返回代码: {error_code}, 描述: {error_desc}")
                 return None
             
             task_id = result.get("result")
@@ -209,10 +212,12 @@ class MidjourneyGenerator:
                 print(f"URL已保存到: {url_file}")
             return False
 
-    def wait_for_task_completion(self, task_id, max_retries=30, retry_interval=5):
-        """等待任务完成并返回结果"""
+    async def wait_for_task_completion_async(self, task_id, max_retries=30, retry_interval=5):
+        """异步等待任务完成并返回结果"""
         for i in range(max_retries):
-            status_result = self.check_task_status(task_id)
+            # 注意: check_task_status 本身还是同步的，但在异步函数中调用没问题
+            # 如果 check_task_status 网络IO很重，理想情况下也应改为异步，但暂时先这样
+            status_result = self.check_task_status(task_id) 
             status = status_result.get("status")
             progress = status_result.get("progress", "未知")
             
@@ -233,9 +238,114 @@ class MidjourneyGenerator:
             
             if i < max_retries - 1:
                 print(f"等待 {retry_interval} 秒后重试...")
-                time.sleep(retry_interval)
+                # 使用 asyncio.sleep 进行异步等待
+                await asyncio.sleep(retry_interval) 
         
         print("等待超时")
+        return None
+
+    async def generate_image_async(self, prompt, output_filename=None, max_retries=3, aspect_ratio=None):
+        """生成图像的完整流程 (异步版本)
+        
+        Args:
+            prompt: 图像生成提示词
+            output_filename: 输出文件名，如果不提供则自动生成
+            max_retries: 最大重试次数
+            aspect_ratio: 图像比例，可选值为 "16:9", "9:16" 或 None (默认方形)
+        
+        Returns:
+            图像文件的路径 (str) 或 None (失败时)
+        """
+        # 确保 prompt 是字符串
+        prompt = str(prompt)
+        
+        # 生成唯一文件名（如果未提供）
+        if output_filename is None:
+            random_suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
+            output_filename = f"mj_image_{int(time.time())}_{random_suffix}.png"
+        
+        save_path = self.output_dir / output_filename
+
+        # 主要生成逻辑，包含重试
+        for attempt in range(max_retries):
+            print(f"尝试生成图像 (第 {attempt + 1}/{max_retries} 次): {prompt[:50]}...")
+            # 1. 提交初始绘图任务
+            initial_task_id = self.submit_imagine_task(prompt, aspect_ratio=aspect_ratio)
+
+            if initial_task_id:
+                print(f"初始任务 {initial_task_id} 已提交，开始等待结果...")
+                # 2. 等待初始任务完成 (异步)
+                initial_result = await self.wait_for_task_completion_async(initial_task_id)
+
+                if initial_result and initial_result.get("status") == "SUCCESS":
+                    print(f"初始任务 {initial_task_id} 成功完成。")
+                    initial_image_url = initial_result.get("imageUrl") # 获取四宫格图URL (可能用于调试)
+                    if initial_image_url:
+                        print(f"获取到初始四宫格图URL: {initial_image_url}")
+                    else:
+                        print(f"警告：初始任务 {initial_task_id} 成功但未找到图像URL")
+                        # 即使没有URL，也可能继续尝试放大（某些情况下API可能不返回初始URL）
+
+                    # --- 添加放大逻辑 ---
+                    try:
+                        # 3. 随机选择一个图像进行放大 (U1, U2, U3, U4)
+                        upscale_index = random.randint(1, 4)
+                        print(f"选择第 {upscale_index} 张图片进行放大...")
+                        upscale_submission_result = self.submit_upscale_task(initial_task_id, upscale_index) # 同步提交
+
+                        if upscale_submission_result.get("code") not in [1, 21, 22]: # 1=成功, 21=已存在, 22=排队中
+                            reason = upscale_submission_result.get('description', '未知错误')
+                            print(f"!!! 放大任务提交失败 (任务ID: {initial_task_id}, U{upscale_index}): {reason}")
+                            # 决定是否重试整个流程
+                            if attempt < max_retries - 1:
+                                print("将重试整个生成流程...")
+                                continue # 跳到下一次外层循环重试
+                            else:
+                                print("!!! 放大任务提交失败，达到最大重试次数")
+                                return None # 达到最大重试次数
+
+                        upscale_task_id = upscale_submission_result.get("result")
+                        if not upscale_task_id:
+                            print(f"!!! 放大任务提交后未获取到有效的任务ID: {upscale_submission_result}")
+                            if attempt < max_retries - 1: continue
+                            else:
+                                print("!!! 放大任务未获取ID，达到最大重试次数")
+                                return None
+
+                        print(f"放大任务 {upscale_task_id} 已提交 (来自初始任务 {initial_task_id}, U{upscale_index})，等待完成...")
+
+                        # 4. 等待放大任务完成 (异步)
+                        final_result = await self.wait_for_task_completion_async(upscale_task_id)
+
+                        if final_result and final_result.get("status") == "SUCCESS":
+                            # 5. 下载最终的放大图像
+                            final_image_url = final_result.get("imageUrl")
+                            if final_image_url:
+                                print(f"放大任务 {upscale_task_id} 成功，最终URL: {final_image_url}")
+                                if self.download_image(final_image_url, save_path):
+                                    return str(save_path) # 成功！返回路径
+                                else:
+                                    print(f"!!! 最终图像下载失败: {final_image_url}")
+                                    # 下载失败，可能需要重试整个流程
+                            else:
+                                print(f"!!! 放大任务 {upscale_task_id} 成功但未找到最终图像URL")
+                        else:
+                            reason = final_result.get("failReason", "未知原因") if final_result else "等待超时"
+                            print(f"!!! 放大任务 {upscale_task_id} 失败或超时: {reason}")
+                    except Exception as upscale_err:
+                         print(f"!!! 处理放大任务时发生异常: {upscale_err}")
+                         # 出现异常也视为失败，可能需要重试
+
+                else: # 初始任务失败或超时
+                    reason = initial_result.get("failReason", "未知原因") if initial_result else "等待超时"
+                    print(f"!!! 初始任务 {initial_task_id} 失败或超时: {reason}")
+            else: # 提交初始任务失败
+                print("!!! 提交初始任务失败")
+
+            # 如果执行到这里，说明当前尝试失败
+            print(f"--- 第 {attempt + 1} 次尝试失败 ---")
+
+        print(f"图像生成失败，已达到最大重试次数: {prompt[:50]}...")
         return None
 
     def generate_image(self, prompt, output_filename=None, max_retries=3, aspect_ratio=None):

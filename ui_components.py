@@ -1,5 +1,6 @@
 import gradio as gr
 from typing import Dict, List, Any, Optional, Union
+from video_processing import process_story
 
 # 常量定义
 DEFAULT_FONT_SIZE = 18
@@ -98,6 +99,21 @@ def _create_image_settings() -> tuple:
             value=ASPECT_RATIOS[0],
             visible=True
         )
+        
+        # --- 添加 Midjourney 并发设置 --- 
+        mj_concurrency_selector = gr.Radio(
+            label="Midjourney 并发数", 
+            choices=[3, 10], 
+            value=3, 
+            info="选择 MJ 任务并发数。",
+            visible=True
+        )
+    
+    mj_concurrency_warning = gr.Markdown(
+        "⚠️ **警告**：选择 10 并发数建议仅在 **Fast 模式** 下使用，否则可能因速率限制导致大量失败。", 
+        visible=False
+    )
+    # --- 结束 Midjourney 并发设置 --- 
     
     with gr.Row():
         comfyui_style = gr.Radio(
@@ -120,7 +136,7 @@ def _create_image_settings() -> tuple:
             visible=True
         )
     
-    return image_generator, aspect_ratio, comfyui_style, image_style_type, custom_style
+    return image_generator, aspect_ratio, comfyui_style, image_style_type, custom_style, mj_concurrency_selector, mj_concurrency_warning
 
 def _create_subtitle_settings() -> tuple:
     """创建字幕设置区域
@@ -182,28 +198,39 @@ def _create_subtitle_settings() -> tuple:
     
     return font_name, refresh_fonts_button, font_size, font_color, bg_opacity, show_all_fonts_button, all_fonts_output
 
-def _create_voice_settings() -> gr.components.Component:
+def _create_voice_settings() -> tuple:
     """创建声音设置区域
     
     Returns:
-        gr.components.Component: 声音设置相关组件
+        tuple: 声音设置相关组件
     """
     from ui_helpers import get_available_voices
     
-    # 移除Accordion，直接显示组件
+    # 声音选择
     voice_dropdown = gr.Dropdown(
         label="选择角色声音",
         choices=get_available_voices(),
-        value="ID: 13 - 青山龍星"  # 默认值
+        value="VoiceVox: ID 13 - 青山龍星" # Update default based on new format
     )
     
-    return voice_dropdown
+    # 语速调整滑块
+    speed_scale_slider = gr.Slider(
+        label="语速 (Speed)",
+        minimum=0.5,
+        maximum=2.0,
+        value=1.0,
+        step=0.1,
+        info="调整语音合成的速度 (1.0为正常速度)",
+        interactive=True
+    )
+    
+    return voice_dropdown, speed_scale_slider # Return both components
 
-def _create_other_settings() -> tuple:
+def _create_other_settings() -> dict:
     """创建其他设置区域
     
     Returns:
-        tuple: 其他设置相关组件
+        dict: 其他设置相关组件
     """
     from ui_helpers import list_character_images
     
@@ -299,18 +326,18 @@ def create_main_ui() -> Dict[str, Any]:
             with gr.Tabs():
                 with gr.TabItem("图像设置"):
                     # 创建图像设置区域
-                    image_generator, aspect_ratio, comfyui_style, image_style_type, custom_style = _create_image_settings()
+                    image_generator, aspect_ratio, comfyui_style, image_style_type, custom_style, mj_concurrency_selector, mj_concurrency_warning = _create_image_settings()
                 
                 with gr.TabItem("声音与字幕"):
                     # 创建声音设置区域
-                    voice_dropdown = _create_voice_settings()
+                    voice_dropdown, speed_scale_slider = _create_voice_settings()
                     
                     # 创建字幕设置区域 - 直接展开而不是放在折叠面板中
                     font_name, refresh_fonts_button, font_size, font_color, bg_opacity, show_all_fonts_button, all_fonts_output = _create_subtitle_settings()
                 
                 with gr.TabItem("角色与效果"):
                     # 创建其他设置区域 - 直接展开而不是放在折叠面板中
-                    other_settings = _create_other_settings()
+                    other_settings_dict = _create_other_settings() # Returns a dict now
             
             # 创建视频引擎选择和处理按钮 - 放在tabs外面以保持可见性
             with gr.Row():
@@ -332,7 +359,7 @@ def create_main_ui() -> Dict[str, Any]:
                 interactive=False
             )
     
-    # 整合所有组件
+    # --- 整合所有组件到 components 字典 (确保在事件处理之前完成) ---
     components = {
         "text_input": text_input,
         "file_dropdown": file_dropdown,
@@ -342,6 +369,8 @@ def create_main_ui() -> Dict[str, Any]:
         "comfyui_style": comfyui_style,
         "image_style_type": image_style_type,
         "custom_style": custom_style,
+        "mj_concurrency_selector": mj_concurrency_selector, # Add here
+        "mj_concurrency_warning": mj_concurrency_warning, # Add here
         "font_name": font_name,
         "refresh_fonts_button": refresh_fonts_button,
         "font_size": font_size,
@@ -350,14 +379,101 @@ def create_main_ui() -> Dict[str, Any]:
         "show_all_fonts_button": show_all_fonts_button,
         "all_fonts_output": all_fonts_output,
         "voice_dropdown": voice_dropdown,
+        "speed_scale_slider": speed_scale_slider,
         "video_engine": video_engine,
         "one_click_process_button": one_click_process_button,
         "output_text": output_text,
         "output_video": output_video
     }
     
-    # 添加其他设置中的组件
-    components.update(other_settings)
+    # 添加其他设置中的组件 (它们本身就是字典，可以直接更新)
+    components.update(other_settings_dict)
+    # --- 结束组件整合 --- 
+    
+    # === 事件处理 (主流程) - 确保所有引用都通过 components 字典 ===
+    # 刷新文件列表
+    components["refresh_button"].click(fn=lambda: gr.Dropdown.update(choices=list_input_files()), inputs=None, outputs=components["file_dropdown"])
+    
+    # 刷新字体列表
+    components["refresh_fonts_button"].click(fn=lambda: gr.Dropdown.update(choices=get_available_fonts()), inputs=None, outputs=components["font_name"])
+    
+    # 显示/隐藏所有字体列表
+    components["show_all_fonts_button"].click(
+        fn=lambda: gr.update(visible=True, value="\n".join(list_all_fonts()) or "fonts目录为空或不存在"), 
+        inputs=None, 
+        outputs=components["all_fonts_output"]
+    )
+    
+    # 刷新角色形象列表
+    components["refresh_character_button"].click(fn=lambda: gr.Dropdown.update(choices=list_character_images()), inputs=None, outputs=components["character_image"])
+    
+    # 联动：根据是否启用说话角色显示/隐藏选项
+    components["talking_character"].change(
+        fn=lambda enabled: (gr.update(visible=enabled), gr.update(visible=enabled)), 
+        inputs=components["talking_character"], 
+        outputs=[components["talking_character_options"], components["talking_sensitivity"]]
+    )
+    
+    # 联动：根据图像生成器显示/隐藏 MJ/ComfyUI 特定选项
+    components["image_generator"].change(
+        fn=update_ui_based_on_generator, # 使用已有的辅助函数
+        inputs=components["image_generator"],
+        outputs=[components["aspect_ratio"], components["comfyui_style"]] 
+    )
+    
+    # 联动：根据图像生成器显示/隐藏 MJ 并发选项和警告
+    components["image_generator"].change(
+        fn=lambda choice: (gr.update(visible=(choice == 'midjourney')), gr.update(visible=False if choice != 'midjourney' else (components["mj_concurrency_selector"].value == 10))), # 切换时隐藏警告, 但保留初始状态
+        inputs=components["image_generator"],
+        outputs=[components["mj_concurrency_selector"], components["mj_concurrency_warning"]]
+    )
+    
+    # 联动：根据 MJ 并发数显示/隐藏警告
+    components["mj_concurrency_selector"].change(
+        fn=lambda choice: gr.update(visible=(choice == 10)), 
+        inputs=components["mj_concurrency_selector"], 
+        outputs=components["mj_concurrency_warning"]
+    )
+
+    # 联动：根据图像风格类型显示/隐藏自定义风格输入框
+    components["image_style_type"].change(
+        fn=lambda choice: gr.update(visible=(choice == '自定义风格')), # 仅当选择自定义风格时显示
+        inputs=components["image_style_type"],
+        outputs=components["custom_style"]
+    )
+
+    # 一键生成按钮点击事件 (确保输入列表正确引用 components 字典中的键)
+    components["one_click_process_button"].click(
+        fn=process_story, 
+        inputs=[
+            components["file_dropdown"],         # 输入文件路径
+            components["text_input"],            # 或直接输入文本
+            components["image_generator"],       # 图像生成器类型
+            components["aspect_ratio"],          # 图像比例
+            components["image_style_type"],      # 图像风格类型
+            components["custom_style"],          # 自定义风格文本
+            components["comfyui_style"],         # ComfyUI特定风格
+            components["font_name"],             # 字幕字体名称
+            components["font_size"],             # 字幕字体大小
+            components["font_color"],            # 字幕字体颜色
+            components["bg_opacity"],            # 字幕背景不透明度
+            components["character_image"],       # 角色图片路径
+            components["preserve_line_breaks"],  # 是否保留原始换行
+            components["voice_dropdown"],        # 角色声音
+            components["speed_scale_slider"],    # 语速
+            components["mj_concurrency_selector"],# MJ 并发数选择器
+            components["video_resolution"],      # 视频分辨率
+            components["video_engine"],          # 视频处理引擎
+            components["talking_character"],     # 是否启用说话角色
+            components["closed_mouth_image"],    # 闭嘴图片
+            components["open_mouth_image"],      # 张嘴图片
+            components["audio_sensitivity"],     # 音频敏感度
+            # 假设有个 no_regenerate_images 的 Checkbox (如果需要从 UI 控制)
+            gr.Checkbox(value=False, visible=False) # 临时占位符
+        ],
+        outputs=[components["output_text"], components["output_video"]], 
+        api_name="process_story_main"
+    )
     
     return components
 

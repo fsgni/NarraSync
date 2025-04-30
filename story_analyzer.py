@@ -913,3 +913,66 @@ class StoryAnalyzer:
         
         return prompt
 
+    # 新增方法：使用 LLM 重写提示词以避免敏感内容
+    def rewrite_prompt_for_sensitivity(self, original_prompt: str, retry_count: int = 0) -> str:
+        """使用配置的 LLM (gpt-4o-mini) 重写提示词，旨在移除敏感内容。"""
+        print(f"尝试使用 GPT-4o mini 重写提示词 (重试次数: {retry_count})，原始提示词: {original_prompt[:100]}...")
+
+        system_message = """
+        You are an AI image prompt optimization expert. Your task is to rewrite potentially sensitive prompts to ensure they pass content moderation filters while preserving the original artistic intent as much as possible.
+        Rules:
+        1. Remove or replace words related to violence, gore, nudity, or other potentially NSFW content.
+        2. Maintain the core subject, setting, and style of the original prompt.
+        3. Use more implicit or euphemistic language if necessary.
+        4. If the original prompt seems safe, slightly rephrase it to be absolutely sure.
+        5. Respond ONLY with the rewritten prompt, without any explanation, preamble, or quotation marks.
+        """
+        
+        user_message = f"""
+        Rewrite the following image prompt to avoid sensitive content while keeping the original meaning. This is retry number {retry_count + 1} because the previous prompt failed generation.
+        Original Prompt: {original_prompt}
+        Rewritten Prompt: 
+        """ # Added "Rewritten Prompt:" to guide the model better
+
+        # 缓存键，避免对完全相同的重写请求重复调用 API
+        cache_key = f"rewrite_{hash(original_prompt)}_{retry_count}"
+        if hasattr(self, '_rewrite_cache') and cache_key in self._rewrite_cache:
+            print("使用缓存的重写提示词")
+            return self._rewrite_cache[cache_key]
+
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model, # 使用 self.model (gpt-4o-mini)
+                messages=[
+                    {"role": "system", "content": system_message},
+                    {"role": "user", "content": user_message}
+                ],
+                temperature=0.6, # Slightly lower temperature for more deterministic rewriting
+                max_tokens=len(original_prompt) + 50 # Allow some extra tokens
+            )
+            
+            rewritten_prompt = response.choices[0].message.content.strip()
+            
+            # 简单的清理，移除可能的多余引号
+            rewritten_prompt = rewritten_prompt.strip('"\' ')
+            
+            print(f"GPT-4o mini 返回的重写提示词: {rewritten_prompt[:100]}...")
+
+            # 初始化重写缓存（如果不存在）
+            if not hasattr(self, '_rewrite_cache'):
+                self._rewrite_cache = {}
+            # 缓存结果
+            self._rewrite_cache[cache_key] = rewritten_prompt
+            
+            # 避免返回完全相同的提示词，除非API调用失败
+            if rewritten_prompt.lower() == original_prompt.lower():
+                print("警告：重写后的提示词与原始提示词相同。将添加后缀。")
+                return original_prompt + ", safe version"
+
+            return rewritten_prompt
+            
+        except Exception as e:
+            print(f"调用 GPT-4o mini 重写提示词时出错: {e}")
+            # API 调用失败时的回退策略：返回原始提示词加后缀
+            return original_prompt + f", rewrite attempt {retry_count + 1} failed"
+

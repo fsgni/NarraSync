@@ -239,8 +239,8 @@ class TextProcessor:
         Returns:
             Tuple[str, List[Dict]]: 处理后的文本（删除标记）和提取的标题列表
         """
-        # 匹配标题标记，格式为：[标题:标题文本]
-        title_pattern = r'\[标题:(.*?)\]'
+        # 匹配标题标记，格式从 [标题:标题文本] 改为 [标题文本]
+        title_pattern = r'\[(.*?)\]'
         titles = []
         title_positions = []
         

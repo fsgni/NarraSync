@@ -387,16 +387,14 @@ class OpenAITTSGenerator(VoiceGeneratorService):
             logger.error(f"异步语音合成失败: {e}")
             raise
 
-    def synthesize(self, text: str, output_path: str, speaker_id: Optional[int] = None, 
-                  voice_preset: Optional[str] = None, custom_instructions: Optional[str] = None) -> float:
+    def synthesize(self, text: str, output_path: str, speaker_id: Optional[int] = None, speed_scale: float = 1.0) -> float:
         """生成语音
         
         Args:
             text: 文本内容
             output_path: 输出文件路径
             speaker_id: 说话人ID
-            voice_preset: 语音预设名称
-            custom_instructions: 自定义语音指令，如果提供则覆盖预设
+            speed_scale: 语速调整，1.0为默认值
             
         Returns:
             音频时长（秒）
@@ -406,13 +404,7 @@ class OpenAITTSGenerator(VoiceGeneratorService):
         
         # 获取语音指令
         instructions = None
-        if custom_instructions:
-            instructions = custom_instructions
-            logger.debug("使用自定义语音指令")
-        elif voice_preset:
-            instructions = self.get_voice_instructions(voice_preset)
-            logger.debug(f"使用预设语音指令: {voice_preset}")
-        elif self.voice_preset != "default":
+        if self.voice_preset != "default":
             instructions = self.get_voice_instructions()
             logger.debug(f"使用当前预设语音指令: {self.voice_preset}")
         
@@ -839,12 +831,13 @@ class VoiceVoxGenerator(VoiceGeneratorService):
         # 执行带重试的操作
         return self._with_retry(_get_query, error_msg="获取音频查询参数失败")
     
-    def get_audio_duration(self, text, speaker=None) -> Optional[float]:
+    def get_audio_duration(self, text, speaker=None, speed_scale: float = 1.0) -> Optional[float]:
         """获取音频时长（秒）
         
         Args:
             text: 要合成的文本
             speaker: 说话人ID，默认使用当前说话人
+            speed_scale: 语速调整，1.0为默认值
             
         Returns:
             音频时长，如果失败则返回None
@@ -855,6 +848,11 @@ class VoiceVoxGenerator(VoiceGeneratorService):
         try:
             # 获取音频查询参数
             query = self.get_audio_query(text, speaker)
+            
+            # Modify query for speed for accurate duration estimation if needed
+            # For now, we assume default speed for duration check, or rely on synthesize's output.
+            # If exact duration *with speed* is needed beforehand, modify query here:
+            # query["speedScale"] = speed_scale
             
             # 获取音频并保存到临时文件
             audio_data = self._with_retry(
@@ -881,13 +879,14 @@ class VoiceVoxGenerator(VoiceGeneratorService):
             # 清理临时文件
             self._cleanup_temp_file(temp_path)
     
-    def synthesize(self, text: str, output_path: str, speaker_id: Optional[int] = None) -> float:
+    def synthesize(self, text: str, output_path: str, speaker_id: Optional[int] = None, speed_scale: float = 1.0) -> float:
         """生成语音并返回时长
         
         Args:
             text: 要合成的文本
             output_path: 输出文件路径
             speaker_id: 说话人ID，默认使用当前说话人
+            speed_scale: 语速调整，1.0为默认值
             
         Returns:
             音频时长（秒）
@@ -903,6 +902,10 @@ class VoiceVoxGenerator(VoiceGeneratorService):
         try:
             # 获取音频查询参数
             query = self.get_audio_query(text, speaker)
+            
+            # ---> Modify the query object to set the speed <--- 
+            query["speedScale"] = speed_scale 
+            logger.debug(f"设置语速 speedScale: {speed_scale}")
             
             # 获取音频并保存到输出文件
             audio_data = self._with_retry(

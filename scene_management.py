@@ -5,18 +5,21 @@ import shutil
 from PIL import Image
 from typing import Dict, Any, Tuple, List, Optional
 import requests
+import asyncio
 
 # 导入配置和错误处理模块
 from config import config
 from errors import FileError, ProcessingError, get_logger, error_handler
 from services import ServiceLocator
+# 导入 StoryAnalyzer
+from story_analyzer import StoryAnalyzer
 
 # 创建日志记录器
 logger = get_logger("scene_management")
 
-# 使用大模型重写提示词的函数
+# 修改：使用 StoryAnalyzer 中的方法重写提示词
 def rewrite_prompt_with_ai(original_prompt, retry_count=0):
-    """使用AI重写提示词，避开敏感词
+    """使用 StoryAnalyzer 中的 LLM 方法重写提示词，避开敏感词
 
     Args:
         original_prompt: 原始提示词
@@ -26,53 +29,21 @@ def rewrite_prompt_with_ai(original_prompt, retry_count=0):
         str: 重写后的提示词
     """
     try:
-        # 如果是第一次重试，尝试简单修改
-        if retry_count == 0:
-            return original_prompt.replace("裸", "穿着").replace("暴力", "冲突").replace("血", "红色")
+        # 获取 StoryAnalyzer 实例
+        # 注意：这里假设 StoryAnalyzer 可以直接实例化。
+        # 如果您的架构要求通过 ServiceLocator 获取，请相应修改。
+        analyzer = StoryAnalyzer()
         
-        # 构建提示模板
-        system_message = """
-        你是一个AI图像提示词优化专家。你的任务是重写可能包含敏感内容的提示词，使其能够成功通过审核，同时保持原始意图。
-        规则:
-        1. 移除或替换任何与暴力、血腥、裸露等相关的敏感词
-        2. 保持提示词的基本意图和场景描述
-        3. 使用更含蓄、委婉的表达方式
-        4. 如果原提示词中没有敏感词，也请适当调整，确保生成可用
-        5. 只返回重写后的提示词，不要添加任何解释
-        """
+        # 调用 StoryAnalyzer 中的重写方法
+        rewritten_prompt = analyzer.rewrite_prompt_for_sensitivity(original_prompt, retry_count)
         
-        user_message = f"""
-        请重写以下图像提示词，确保避开任何敏感内容，同时保持原意：
-        {original_prompt}
-        
-        这是第{retry_count}次重试，之前的提示词生成图片失败了。
-        """
-        
-        # 日志记录
-        logger.info(f"使用AI重写提示词，重试次数: {retry_count}")
-        logger.info(f"原始提示词: {original_prompt}")
-        
-        # 简单模拟大模型处理 - 在实际实现中，这里应该调用LLM API
-        # 例如调用本地的大模型或OpenAI等服务
-        # 这里仅做简单替换示例
-        new_prompt = original_prompt
-        if "裸" in new_prompt or "nude" in new_prompt.lower():
-            new_prompt = new_prompt.replace("裸", "穿着衣服").replace("nude", "clothed")
-        if "血" in new_prompt or "blood" in new_prompt.lower():
-            new_prompt = new_prompt.replace("血", "红色液体").replace("blood", "red")
-        if "暴力" in new_prompt or "violence" in new_prompt.lower():
-            new_prompt = new_prompt.replace("暴力", "剧烈活动").replace("violence", "action")
-        
-        # 添加更保守的修饰词
-        new_prompt += ", tasteful, appropriate, decent"
-        
-        logger.info(f"重写后的提示词: {new_prompt}")
-        return new_prompt
+        logger.info(f"成功从 StoryAnalyzer 获取重写后的提示词 (重试 {retry_count})")
+        return rewritten_prompt
         
     except Exception as e:
-        logger.error(f"重写提示词失败: {e}")
-        # 出错时返回稍微修改的原始提示词
-        return original_prompt + " (appropriate version)"
+        logger.error(f"调用 StoryAnalyzer 重写提示词失败: {e}")
+        # 出错时返回稍微修改的原始提示词作为回退
+        return original_prompt + f" (rewrite attempt {retry_count + 1} failed)"
 
 @error_handler(error_message="上传场景图片失败")
 def upload_scene_image(scene_index, image_path):
@@ -218,8 +189,8 @@ def gallery_select(evt, scene_video_path):
     return load_scene_details(scene_idx, scene_video_path)
 
 @error_handler(error_message="重新生成场景图片失败")
-def regenerate_scene_image(scene_id, scenes, image_generator_type, aspect_ratio, image_style, custom_style, comfyui_style):
-    """重新生成指定场景的图片
+async def regenerate_scene_image_async(scene_id, scenes, image_generator_type, aspect_ratio, image_style, custom_style, comfyui_style):
+    """重新生成指定场景的图片 (异步版本)
     
     Args:
         scene_id: 场景ID
@@ -284,7 +255,16 @@ def regenerate_scene_image(scene_id, scenes, image_generator_type, aspect_ratio,
     # 重新生成图片
     logger.info(f"开始重新生成图片，场景ID: {scene_id}, 提示词: {enhanced_prompt}")
     try:
-        output_filepath = image_generator.generate_image(enhanced_prompt, output_filename, **kwargs)
+        # 如果是 Midjourney，调用异步方法
+        if image_generator_type.lower() == "midjourney":
+            output_filepath = await image_generator.generate_image_async(enhanced_prompt, output_filename, **kwargs)
+        else: # ComfyUI 或其他保持同步调用
+            output_filepath = image_generator.generate_image(enhanced_prompt, output_filename, **kwargs)
+
+        if not output_filepath:
+            # 如果返回 None，也认为是失败
+            raise ProcessingError("图像生成器未能返回有效的文件路径")
+            
         logger.info(f"图片生成成功: {output_filepath}")
         
         # 获取场景管理器并标记图片为已修改
@@ -295,6 +275,15 @@ def regenerate_scene_image(scene_id, scenes, image_generator_type, aspect_ratio,
         return 200, f"场景 {scene_id} 的图片已成功重新生成", image_file
     except Exception as e:
         logger.error(f"生成图片失败: {e}")
+        # 添加更详细的打印输出到后台命令行
+        import traceback
+        print(f"--- regenerate_scene_image_async 捕获到异常 ---")
+        print(f"场景ID: {scene_id}")
+        print(f"使用的提示词: {enhanced_prompt}")
+        print(f"详细错误信息: {e}")
+        print(traceback.format_exc())
+        print(f"--- 异常信息结束 ---")
+        # 返回的 message 保持不变，依然是原始错误
         return 500, f"生成图片失败: {str(e)}", None 
 
 @error_handler(error_message="重新生成场景图片失败")
@@ -323,11 +312,16 @@ def regenerate_scene_image_with_retry(scene_id, scenes, image_generator_type, as
     scene = scenes[scene_idx]
     original_prompt = scene.get("prompt", "")
     
-    # 尝试使用原始提示词生成
+    # 尝试使用原始提示词生成 (调用异步版本)
     logger.info(f"尝试使用原始提示词生成图片，场景ID: {scene_id}, 提示词: {original_prompt}")
-    status, message, image_file = regenerate_scene_image(
-        scene_id, scenes, image_generator_type, aspect_ratio, image_style, custom_style, comfyui_style
-    )
+    # 使用 asyncio.run() 来同步执行异步函数
+    try:
+        status, message, image_file = asyncio.run(regenerate_scene_image_async(
+            scene_id, scenes, image_generator_type, aspect_ratio, image_style, custom_style, comfyui_style
+        ))
+    except Exception as run_err: # 捕获 asyncio.run 可能的错误
+        logger.error(f"运行 regenerate_scene_image_async 时出错: {run_err}")
+        status, message, image_file = 500, f"内部错误: {run_err}", None
     
     # 如果成功则直接返回
     if status == 200:
@@ -348,11 +342,16 @@ def regenerate_scene_image_with_retry(scene_id, scenes, image_generator_type, as
         scene["prompt"] = new_prompt
         scenes[scene_idx] = scene
         
-        # 尝试使用新提示词生成
+        # 尝试使用新提示词生成 (调用异步版本)
         logger.info(f"使用重写后的提示词重试，场景ID: {scene_id}, 新提示词: {new_prompt}")
-        status, message, image_file = regenerate_scene_image(
-            scene_id, scenes, image_generator_type, aspect_ratio, image_style, custom_style, comfyui_style
-        )
+        # 使用 asyncio.run() 来同步执行异步函数
+        try:
+            status, message, image_file = asyncio.run(regenerate_scene_image_async(
+                scene_id, scenes, image_generator_type, aspect_ratio, image_style, custom_style, comfyui_style
+            ))
+        except Exception as run_err:
+            logger.error(f"运行 regenerate_scene_image_async (重试) 时出错: {run_err}")
+            status, message, image_file = 500, f"内部错误: {run_err}", None
         
         # 更新当前提示词用于下一次重试
         current_prompt = new_prompt

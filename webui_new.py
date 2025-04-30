@@ -11,6 +11,7 @@ import random
 import glob  # 添加glob模块导入
 from pathlib import Path  # 添加Path导入
 from video_title_adder import apply_scene_titles_to_video # 只需导入这个，create_title_image 被它内部调用
+import gradio.themes as gr_themes # Import themes module
 
 # 导入模块化组件
 from ui_helpers import (
@@ -942,16 +943,14 @@ def get_scene_timestamps(key_scenes_file=None):
         return []
 
 # 创建Gradio界面
-with gr.Blocks(title="故事视频生成器", theme=gr.themes.Soft()) as demo:
+with gr.Blocks(theme=gr_themes.Base()) as demo:
     # 创建共享的状态变量
     current_output_video = gr.State(value=None)
     
     with gr.Tabs():
         # 一键生成选项卡
         with gr.TabItem("一键生成"):
-            gr.Markdown("# 故事视频生成器")
-            gr.Markdown("输入文本或选择已有文件，一键生成视频。")
-            
+                        
             # 创建主UI组件
             main_ui = create_main_ui()
             
@@ -980,6 +979,17 @@ with gr.Blocks(title="故事视频生成器", theme=gr.themes.Soft()) as demo:
             one_click_process_button = main_ui["one_click_process_button"]
             output_text = main_ui["output_text"]
             output_video = main_ui["output_video"]
+            
+            # --- 新增：日志显示区域 ---
+            with gr.Accordion("显示/隐藏详细日志", open=False):
+                log_output_area = gr.Textbox(
+                    label="运行日志", 
+                    lines=15, 
+                    interactive=False, 
+                    visible=True, 
+                    # elem_id="log_output_textbox" # Optional: Add elem_id for potential CSS styling
+                )
+            # --- 日志区域结束 ---
             
             # 控制说话角色选项显示
             talking_character = main_ui["talking_character"]
@@ -1141,7 +1151,7 @@ with gr.Blocks(title="故事视频生成器", theme=gr.themes.Soft()) as demo:
             character_image, preserve_line_breaks, voice_dropdown, video_engine, video_resolution,
             talking_character, closed_mouth_image, open_mouth_image, audio_sensitivity
         ],
-        outputs=[output_text, output_video]
+        outputs=[output_text, output_video, log_output_area]
     ).then(
         fn=lambda video_path: (video_path, gr.update(value=video_path)),
         inputs=[output_video],
@@ -1365,4 +1375,16 @@ def webui_refresh_scene_list(video_path):
 
 # 启动服务
 if __name__ == "__main__":
+    # Ensure necessary directories exist
+    os.makedirs("input_texts", exist_ok=True)
+    os.makedirs("input_images", exist_ok=True)
+    os.makedirs("character_images", exist_ok=True)
+    os.makedirs("output", exist_ok=True)
+    os.makedirs("fonts", exist_ok=True)
+    os.makedirs("title_backgrounds", exist_ok=True)
+    
+    # Cleanup old files if needed (optional)
+    # cleanup_output_directories()
+
+    # Launch the app
     demo.launch(share=True)  

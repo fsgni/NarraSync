@@ -10,6 +10,8 @@ import numpy as np
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Generator, Any, Union
 from dataclasses import dataclass
+import logging
+import io
 from ui_helpers import extract_voice_id, cleanup_output_directories
 from config import config
 
@@ -304,142 +306,225 @@ def _add_character_params(cmd: List[str], character_image: Optional[str], preser
     print(f"添加audio_sensitivity参数: {audio_sensitivity}")
 
 def run_process(cmd: List[str]) -> Generator[Tuple[str, Optional[str]], None, None]:
-    """运行进程并获取实时输出
+    """运行子进程并实时产生输出，现在主要用于日志传递"""
+    output_log = ""
+    return_code = -1
+    process = None # Initialize process to None
+    try:
+        process = subprocess.Popen(
+            cmd, 
+            stdout=subprocess.PIPE, 
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding='utf-8',
+            errors='replace', 
+            creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
+        )
     
-    Args:
-        cmd: 命令行参数列表
+        if process.stdout:
+            for line in iter(process.stdout.readline, ''):
+                if line:
+                    output_log += line
+                    yield line, None
+            # Ensure stdout is closed if loop finishes
+            if process.stdout and not process.stdout.closed:
+                 process.stdout.close()
+            
+        return_code = process.wait()
         
-    Yields:
-        Tuple[str, Optional[str]]: 输出文本和视频路径
-    """
-    # 运行命令并实时获取输出
-    process = subprocess.Popen(
-        cmd, 
-        stdout=subprocess.PIPE, 
-        stderr=subprocess.STDOUT,
-        text=True,
-        encoding='utf-8',  # 强制使用UTF-8编码
-        errors='replace'   # 添加错误处理策略
-    )
-    
-    output = ""
-    
-    for line in process.stdout:
-        try:
-            output += line
-            yield output, None
-        except UnicodeError:
-            # 如果出现编码错误，添加一个替代消息
-            output += "[无法显示的字符]\n"
-            yield output, None
-    
-    process.wait()
-    
-    # 处理完成后的结果
-    if process.returncode != 0:
-        output += f"\n处理完成，但存在错误 (返回码: {process.returncode})"
-    else:
-        output += "\n处理完成！"
-        
-        # 找到生成的视频文件
-        latest_video = find_latest_video()
-        if latest_video:
-            output += f"\n生成的视频: {latest_video}"
-            output += f"\n👆 可以在上方的视频播放器中预览，或点击视频下方的下载按钮保存到本地"
-            yield output, latest_video
-            return
-    
-    yield output, None
+        if return_code != 0:
+            yield f"错误: 进程返回错误码 {return_code}\n", None
+        else:
+            yield "进程成功完成\n", None
+            
+    except FileNotFoundError:
+        yield f"错误: 无法找到执行程序 {cmd[0]}. 请确保Python和相关依赖已正确安装并添加到PATH。\n", None
+    except Exception as e:
+        yield f"运行子进程时出错: {e}\n", None
+    finally:
+        # Ensure resources are cleaned up even if errors occur during Popen
+        if process and process.stdout and not process.stdout.closed:
+            process.stdout.close()
+        # We might not need to yield anything in finally, just cleanup
 
 def find_latest_video() -> Optional[str]:
-    """找到最近生成的视频文件
-    
-    Returns:
-        Optional[str]: 视频文件路径或None
-    """
-    video_files = glob.glob(f"{OUTPUT_DIR}/*.mp4") + glob.glob(f"{OUTPUT_DIR}/videos/*.mp4")
+    """查找最新的视频文件"""
+    # Use Path for better path handling
+    output_dir = Path(OUTPUT_DIR)
+    video_files = list(output_dir.glob("*.mp4")) + list(output_dir.glob("videos/*.mp4"))
     if video_files:
-        return max(video_files, key=os.path.getmtime)
+        # Use pathlib's stat().st_mtime for modification time
+        return str(max(video_files, key=lambda p: p.stat().st_mtime))
     return None
 
-def process_story(text_input: str, selected_file: str, image_generator_type: str, aspect_ratio: str, 
-                  image_style_type: str, custom_style: Optional[str] = None, comfyui_style: Optional[str] = None, 
-                  font_name: Optional[str] = None, font_size: Optional[int] = None, 
-                  font_color: Optional[str] = None, bg_opacity: Optional[float] = None, 
-                  character_image: Optional[str] = None, preserve_line_breaks: bool = False, 
-                  voice_dropdown: str = DEFAULT_VOICE, video_engine: str = "auto", 
-                  video_resolution: str = "auto", talking_character: bool = False, 
-                  closed_mouth_image: Optional[str] = None, open_mouth_image: Optional[str] = None, 
-                  audio_sensitivity: float = DEFAULT_AUDIO_SENSITIVITY) -> Generator[Tuple[str, Optional[str]], None, None]:
-    """处理故事文本，生成视频，并返回结果
-    
-    Args:
-        text_input: 直接输入的文本
-        selected_file: 选择的文件
-        image_generator_type: 图像生成器类型 (comfyui or midjourney)
-        aspect_ratio: 图像比例 (16:9, 9:16, 等)
-        image_style_type: 图像风格类型
-        custom_style: 自定义风格
-        comfyui_style: ComfyUI风格
-        font_name: 字体名称
-        font_size: 字体大小
-        font_color: 字体颜色
-        bg_opacity: 背景不透明度
-        character_image: 角色图片
-        preserve_line_breaks: 是否保留换行
-        voice_dropdown: 语音选择下拉框的值
-        video_engine: 视频处理引擎
-        video_resolution: 视频分辨率
-        talking_character: 是否启用会说话的角色
-        closed_mouth_image: 闭嘴图片路径
-        open_mouth_image: 张嘴图片路径
-        audio_sensitivity: 音频灵敏度阈值
+def process_story(
+    text_input: str, selected_file: str, image_generator_type: str, aspect_ratio: str, 
+    image_style_type: str, custom_style: Optional[str] = None, comfyui_style: Optional[str] = None, 
+    font_name: Optional[str] = None, font_size: Optional[int] = None, 
+    font_color: Optional[str] = None, bg_opacity: Optional[float] = None, 
+    character_image: Optional[str] = None, preserve_line_breaks: bool = False, 
+    voice_dropdown: str = DEFAULT_VOICE, video_engine: str = "auto", 
+    video_resolution: str = "auto", talking_character: bool = False, 
+    closed_mouth_image: Optional[str] = None, open_mouth_image: Optional[str] = None, 
+    audio_sensitivity: float = DEFAULT_AUDIO_SENSITIVITY, 
+    # Add missing parameters from ui_components call
+    mj_concurrency: int = 3, # Default value from full_process
+    speed_scale: float = 1.0, # Default value from full_process
+    no_regenerate_images: bool = False # Value from placeholder
+) -> Generator[Union[Tuple[str, Optional[str], str]], None, None]:
+    """处理故事文本并生成视频，捕获日志信息
         
     Yields:
-        Tuple[str, Optional[str]]: 输出文本和视频路径
+        tuple: (状态文本, 视频路径或None, 日志字符串)
     """
-    # 创建配置对象
-    config = VideoProcessingConfig(
-        text_input=text_input,
-        selected_file=selected_file,
-        image_generator_type=image_generator_type,
-        aspect_ratio=aspect_ratio,
-        image_style_type=image_style_type,
-        custom_style=custom_style,
-        comfyui_style=comfyui_style,
-        font_name=font_name,
-        font_size=font_size,
-        font_color=font_color,
-        bg_opacity=bg_opacity,
-        character_image=character_image,
-        preserve_line_breaks=preserve_line_breaks,
-        voice_dropdown=voice_dropdown,
-        video_engine=video_engine,
-        video_resolution=video_resolution,
-        talking_character=talking_character,
-        closed_mouth_image=closed_mouth_image,
-        open_mouth_image=open_mouth_image,
-        audio_sensitivity=audio_sensitivity
-    )
+    # --- 日志捕获设置 ---
+    log_stream = io.StringIO()
+    root_logger = logging.getLogger() 
+    log_handler = logging.StreamHandler(log_stream)
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    log_handler.setFormatter(formatter)
+    original_level = root_logger.level
+    root_logger.addHandler(log_handler)
+    if root_logger.level == logging.NOTSET or root_logger.level > logging.INFO:
+         root_logger.setLevel(logging.INFO) 
+    # --- 日志捕获设置结束 ---
+
+    logger = logging.getLogger(__name__) 
+    final_video_path = None
+    status_message = ""
+    error_occurred = False
+    log_string = ""
     
-    # 验证输入
-    error = validate_inputs(config)
-    if error:
-        yield error, None
-        return
-    
-    # 清理之前的输出文件
-    cleanup_message = cleanup_output_directories()
-    yield f"开始处理...\n{cleanup_message}\n\n", None
-    
-    # 设置分辨率
-    update_video_resolution(config.video_resolution)
-    
-    # 准备输入文件
-    input_file = prepare_input_file(config)
-    
-    # 构建命令
-    cmd = build_command(input_file, config)
-    
-    # 运行进程并获取输出
-    yield from run_process(cmd) 
+    # The main try block for the entire process
+    try:
+        logger.info("开始处理故事...")
+
+        # Create config object (assuming VideoProcessingConfig exists and is correct)
+        # Add the missing parameters to the config object creation if needed
+        proc_config = VideoProcessingConfig(
+            text_input=text_input, selected_file=selected_file, 
+            image_generator_type=image_generator_type, aspect_ratio=aspect_ratio, 
+            image_style_type=image_style_type, custom_style=custom_style, comfyui_style=comfyui_style,
+            font_name=font_name, font_size=font_size, font_color=font_color, bg_opacity=bg_opacity,
+            character_image=character_image, preserve_line_breaks=preserve_line_breaks, 
+            voice_dropdown=voice_dropdown, video_engine=video_engine, video_resolution=video_resolution,
+            talking_character=talking_character, closed_mouth_image=closed_mouth_image,
+            open_mouth_image=open_mouth_image, audio_sensitivity=audio_sensitivity,
+            # Ensure mj_concurrency, speed_scale, no_regenerate_images are handled by config or passed separately
+        )
+        
+        # 1. Validate inputs (assuming validate_inputs exists)
+        logger.info("验证输入...")
+        error = validate_inputs(proc_config)
+        if error: # Correct indentation for the if block
+            status_message = error
+            logger.error(error)
+            error_occurred = True
+            raise Exception(error)
+        
+        # 2. Prepare input file (assuming prepare_input_file exists)
+        logger.info("准备输入文件...")
+        input_file = prepare_input_file(proc_config)
+        logger.info(f"使用输入文件: {input_file}")
+        
+        # 3. Update video resolution (assuming update_video_resolution exists)
+        logger.info(f"更新视频分辨率设置: {video_resolution}")
+        update_video_resolution(video_resolution)
+        
+        # 4. Build command (assuming build_command exists)
+        logger.info("构建处理命令...")
+        # Pass the new parameters to build_command if necessary
+        cmd = build_command(input_file, proc_config)
+        log_stream.write("构建的命令:\n" + " ".join(cmd) + "\n\nRunning...") 
+        status_message = "构建命令完成，开始执行...\n"
+        yield status_message, None, log_stream.getvalue()
+        
+        # 5. Execute main process (full_process.py)
+        logger.info("开始执行 full_process.py ...")
+        process = subprocess.Popen(
+            cmd, 
+            stdout=subprocess.PIPE, 
+            stderr=subprocess.STDOUT, 
+            text=True, 
+            encoding='utf-8',
+            errors='replace', 
+            creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
+        )
+
+        # --- Stage detection mapping --- 
+        stage_keywords = {
+            "处理文本...": "正在处理文本...",
+            "生成语音...": "正在生成语音...",
+            "故事分析和场景识别...": "正在分析场景...",
+            "生成图像...": "正在生成图像...",
+            "生成字幕...": "正在生成字幕...",
+            "创建视频...": "正在合成视频...",
+            "处理完成": "处理完成！",
+            "处理过程中发生错误": "处理失败！", # Add error detection
+        }
+        current_stage_message = "正在执行..." # Initial stage message
+
+        if process.stdout: # Correct indentation
+            for line in iter(process.stdout.readline, ''):
+                if line:
+                    log_stream.write(line) 
+                    
+                    # --- Check for stage update --- 
+                    cleaned_line = line.strip()
+                    for keyword, stage_msg in stage_keywords.items():
+                        if keyword in cleaned_line:
+                            current_stage_message = stage_msg
+                            logger.info(f"检测到新阶段: {current_stage_message}") # Log stage change
+                            break # Use the first keyword found on the line
+                    
+                    # Yield the potentially updated status message
+                    yield current_stage_message, None, log_stream.getvalue() 
+            # Ensure stdout is closed if loop finishes
+            if process.stdout and not process.stdout.closed:
+                process.stdout.close()
+
+        return_code = process.wait()
+        logger.info(f"full_process.py 执行完成，返回码: {return_code}")
+        
+        if return_code != 0:
+            error_msg = f"错误: 处理过程中发生错误，请检查日志了解详情。返回码: {return_code}"
+            status_message = "处理失败！" # Update final status on error
+            logger.error(error_msg)
+            error_occurred = True
+            raise Exception(error_msg)
+            
+        # 6. Find latest video
+        logger.info("查找生成的视频文件...")
+        final_video_path = find_latest_video()
+        
+        if final_video_path:
+            success_msg = f"处理完成！视频已保存到: {final_video_path}"
+            status_message = "处理完成！" # Update final status on success
+            logger.info(success_msg)
+        else:
+            error_msg = "错误: 处理完成，但未找到输出视频文件。"
+            status_message = "处理失败！(未找到视频)" # Update final status
+            logger.error(error_msg)
+            error_occurred = True
+            raise Exception(error_msg)
+
+    except Exception as e: # Aligned with the main try
+        if not error_occurred:
+            import traceback
+            error_details = traceback.format_exc()
+            status_message = f"发生意外错误: {e}" # Update status on unexpected error
+            logger.error(f"处理故事时发生意外错误: {e}\n{error_details}")
+        error_occurred = True
+        
+    finally: # Aligned with the main try
+        # --- 日志捕获清理 ---
+        log_stream.seek(0)
+        log_string = log_stream.read()
+        log_handler.close()
+        root_logger.removeHandler(log_handler)
+        if 'original_level' in locals() and root_logger.level != original_level:
+             root_logger.setLevel(original_level)
+        # --- 日志捕获清理结束 ---
+        
+        # Final yield with the complete log and final status message
+        yield status_message, final_video_path if not error_occurred else None, log_string 

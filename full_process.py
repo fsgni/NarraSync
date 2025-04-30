@@ -14,6 +14,9 @@ import time
 import shutil
 import locale
 import logging
+import asyncio
+from test_voice_generator import process_voice_generation
+from scene_management import rewrite_prompt_with_ai
 
 # 设置日志记录
 logging.basicConfig(
@@ -25,6 +28,9 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger("full_process")
+
+# 定义Midjourney并发限制 (移除，改为函数参数)
+# MAX_MJ_CONCURRENT_REQUESTS = 5 
 
 # 设置系统编码为UTF-8，解决Windows命令行的编码问题
 if sys.stdout.encoding != 'utf-8':
@@ -154,7 +160,144 @@ def clean_output_directories():
         print(error_msg)
         logger.exception(error_msg)
 
-def process_story(input_file: str, image_generator_type: str = "comfyui", aspect_ratio: str = None, image_style: str = None, comfyui_style: str = None, font_name: str = None, font_size: int = None, font_color: str = None, bg_opacity: float = None, character_image: str = None, preserve_line_breaks: bool = False, speaker_id: int = 13, video_engine: str = "auto", no_regenerate_images: bool = False, tts_service: str = "voicevox", voice_preset: str = None, custom_style: str = None, talking_character: bool = False, closed_mouth_image: str = None, open_mouth_image: str = None, audio_sensitivity: float = 0.04):
+# 新增：异步并发生成图像的辅助函数
+async def generate_images_concurrently(key_scenes, image_generator_type, aspect_ratio, image_style, custom_style, comfyui_style, mj_concurrency):
+    logger.info(f"开始并发生成图像，并发数限制: {mj_concurrency}")
+    image_files = []
+    processed_scenes = [] # 用于存储包含生成结果的场景信息
+    
+    # 根据类型选择生成器
+    if image_generator_type.lower() == "comfyui":
+        generator = ComfyUIGenerator(style=comfyui_style)
+        logger.info(f"使用 ComfyUI 生成器, 风格: {comfyui_style}")
+        # TODO: ComfyUI 的并发逻辑可能不同，这里暂时保持原样或后续添加
+        # 目前 ComfyUI 部分的并发未实现
+        for i, scene in enumerate(key_scenes):
+            # ... (保留原有 ComfyUI 生成逻辑, 非并发) ...
+            scene_prompt = scene['prompt'] if isinstance(scene, dict) and 'prompt' in scene else str(scene)
+            image_filename = scene['image_file'] if isinstance(scene, dict) and 'image_file' in scene else f"scene_{i+1:03d}.png"
+            
+            # 准备最终提示词 (合并风格等)
+            final_prompt = scene_prompt # 简化示例，实际应包含风格处理
+            if custom_style:
+                final_prompt += f", {custom_style}"
+            elif image_style:
+                 final_prompt += f", {image_style}"
+            # ... (添加其他通用修饰词) ...
+            
+            image_file = generator.generate_image(final_prompt, image_filename) # 同步调用
+            if image_file:
+                image_files.append(image_file)
+                if isinstance(scene, dict):
+                    scene['image_file_generated'] = image_file # 更新场景信息
+                    processed_scenes.append(scene)
+                logger.info(f"ComfyUI 场景 {i+1} 图像生成成功: {image_file}")
+            else:
+                logger.warning(f"ComfyUI 场景 {i+1} 图像生成结果为空")
+                if isinstance(scene, dict):
+                    processed_scenes.append(scene) # 即使失败也要保留场景结构
+                    
+    elif image_generator_type.lower() == "midjourney":
+        generator = MidjourneyGenerator()
+        logger.info("使用 Midjourney 生成器")
+        semaphore = asyncio.Semaphore(mj_concurrency)
+        
+        async def generate_single_image_task(scene_index, scene_data):
+            async with semaphore:
+                logger.info(f"开始处理 Midjourney 场景 {scene_index + 1}")
+                original_prompt = scene_data['prompt'] if isinstance(scene_data, dict) and 'prompt' in scene_data else str(scene_data)
+                image_filename = scene_data['image_file'] if isinstance(scene_data, dict) and 'image_file' in scene_data else f"scene_{scene_index+1:03d}.png"
+                
+                # 准备最终提示词 (合并风格等)
+                final_prompt = original_prompt # 先用原始提示词
+                if custom_style:
+                    final_prompt += f", {custom_style}"
+                elif image_style:
+                     final_prompt += f", {image_style}"
+                # ... (添加其他通用修饰词) ...
+                
+                logger.debug(f"MJ 场景 {scene_index + 1} 初始最终提示词: {final_prompt[:100]}...")
+                
+                # 第一次尝试：调用异步生成方法
+                image_file = await generator.generate_image_async(
+                    final_prompt,
+                    image_filename,
+                    aspect_ratio=aspect_ratio
+                )
+                
+                # 如果第一次尝试失败，尝试 AI 重写并重试一次
+                if not image_file:
+                    logger.warning(f"Midjourney 场景 {scene_index + 1} 第一次生成失败，尝试 AI 重写提示词...")
+                    # 使用AI重写提示词 (重试次数设为0，表示这是第一次重写)
+                    new_prompt = rewrite_prompt_with_ai(original_prompt, 0)
+                    
+                    # 更新场景提示词 (可选，看是否需要在最终结果中反映)
+                    # if isinstance(scene_data, dict):
+                    #     scene_data['prompt'] = new_prompt
+                        
+                    # 准备重试的最终提示词
+                    retry_final_prompt = new_prompt
+                    if custom_style:
+                        retry_final_prompt += f", {custom_style}"
+                    elif image_style:
+                        retry_final_prompt += f", {image_style}"
+
+                    logger.info(f"使用重写后的提示词重试 MJ 场景 {scene_index + 1}: {retry_final_prompt[:100]}...")
+                    # 第二次尝试：使用重写后的提示词再次调用
+                    image_file = await generator.generate_image_async(
+                        retry_final_prompt,
+                        image_filename,
+                        aspect_ratio=aspect_ratio
+                    )
+                    # 检查第二次尝试结果
+                    if not image_file:
+                        logger.error(f"Midjourney 场景 {scene_index + 1} 使用重写提示词后仍然生成失败")
+                        # 即使重试失败，也返回原始场景数据，只是没有成功标志
+                        return {"index": scene_index, "scene_data": scene_data, "success": False}
+                    else:
+                        logger.info(f"Midjourney 场景 {scene_index + 1} 使用重写提示词后生成成功: {image_file}")
+                        # 更新场景数据中的提示词为重写后的（如果需要）
+                        if isinstance(scene_data, dict):
+                           scene_data['prompt'] = new_prompt 
+                        return {"index": scene_index, "scene_data": scene_data, "image_file": image_file, "success": True}
+
+                # 如果第一次尝试成功
+                else:
+                    logger.info(f"Midjourney 场景 {scene_index + 1} 图像生成成功: {image_file}")
+                    return {"index": scene_index, "scene_data": scene_data, "image_file": image_file, "success": True}
+
+        # 创建所有并发任务
+        tasks = [generate_single_image_task(i, scene) for i, scene in enumerate(key_scenes)]
+        
+        # 并发执行并收集结果
+        logger.info(f"准备并发执行 {len(tasks)} 个 Midjourney 图像生成任务...")
+        results = await asyncio.gather(*tasks)
+        logger.info("所有 Midjourney 并发任务已完成处理。")
+        
+        # 按原始顺序处理结果
+        processed_scenes = [None] * len(key_scenes) # 初始化结果列表
+        for result in results:
+            idx = result["index"]
+            scene_data = result["scene_data"]
+            if result["success"] and isinstance(scene_data, dict):
+                scene_data['image_file_generated'] = result["image_file"]
+                image_files.append(result["image_file"]) # 添加到成功列表
+            elif isinstance(scene_data, dict):
+                 # 即使失败也要保留场景结构
+                 scene_data['image_file_generated'] = None 
+            processed_scenes[idx] = scene_data # 按原索引放回结果
+        
+        # 过滤掉可能的None值（如果原始key_scenes有问题）
+        processed_scenes = [s for s in processed_scenes if s is not None] 
+            
+    else:
+        logger.error(f"不支持的图像生成器类型: {image_generator_type}")
+        processed_scenes = key_scenes # 返回原始场景
+
+    logger.info(f"图像生成完成，共成功生成 {len(image_files)} 个图像")
+    return processed_scenes # 返回处理后的场景列表（可能包含生成的图片路径）
+
+def process_story(input_file: str, image_generator_type: str = "comfyui", aspect_ratio: str = None, image_style: str = None, comfyui_style: str = None, font_name: str = None, font_size: int = None, font_color: str = None, bg_opacity: float = None, character_image: str = None, preserve_line_breaks: bool = False, speaker_id: int = 13, speed_scale: float = 1.0, mj_concurrency: int = 3, video_engine: str = "auto", no_regenerate_images: bool = False, tts_service: str = "voicevox", voice_preset: str = None, custom_style: str = None, talking_character: bool = False, closed_mouth_image: str = None, open_mouth_image: str = None, audio_sensitivity: float = 0.04):
     """
     完整的故事处理流程
     
@@ -171,6 +314,8 @@ def process_story(input_file: str, image_generator_type: str = "comfyui", aspect
         character_image: 角色图片路径，如果提供则在右下角显示
         preserve_line_breaks: 是否保留文本中的原始换行
         speaker_id: 语音角色ID
+        speed_scale: 语速调整 (例如 0.5 到 2.0)
+        mj_concurrency: Midjourney 并发数 (默认 3)
         video_engine: 视频处理引擎，可选 "ffmpeg", "moviepy" 或 "auto"
         no_regenerate_images: 是否不重新生成图片，保留现有图片
         tts_service: 文本到语音服务类型，可选 "voicevox" 或 "openai_tts"
@@ -242,9 +387,25 @@ def process_story(input_file: str, image_generator_type: str = "comfyui", aspect
         # 2. 生成语音
         print("\n2. 生成语音...")
         audio_info_file = f"output/audio/{Path(full_input_path).stem}_audio_info.json"
-        from test_voice_generator import process_voice_generation
-        audio_info = process_voice_generation(output_text_file, "output/audio", speaker_id=speaker_id, tts_service=tts_service, voice_preset=voice_preset)
+        # 导入异步函数，并使用 asyncio.run 执行
+        try:
+            audio_info = asyncio.run(process_voice_generation(
+                output_text_file, 
+                "output/audio", 
+                speaker_id=speaker_id, 
+                speed_scale=speed_scale,
+                use_dict=True,
+                tts_service=tts_service,
+                voice_preset=voice_preset
+            ))
+        except Exception as e:
+            error_msg = f"运行并发语音生成时出错: {e}"
+            print(error_msg)
+            logger.error(error_msg)
+            return error_msg # 或者抛出异常，根据错误处理策略
+            
         print(f"语音生成完成，信息已保存到: {audio_info_file}")
+        logger.info(f"语音生成完成: {len(audio_info)} 个文件，总时长 {sum(item.get('duration', 0) for item in audio_info if 'duration' in item):.2f}秒")
         
         # 3. 分析故事和生成场景
         print("\n3. 分析故事和生成场景...")
@@ -260,7 +421,7 @@ def process_story(input_file: str, image_generator_type: str = "comfyui", aspect
         # 4. 生成图像
         print("\n4. 生成图像...")
         logger.info("开始生成图像")
-        image_files = []
+        image_files = [] # 这个列表现在由并发函数内部管理并返回在processed_scenes中
         
         # 检查是否需要跳过图像生成
         if no_regenerate_images:
@@ -268,133 +429,50 @@ def process_story(input_file: str, image_generator_type: str = "comfyui", aspect
             logger.info("已启用不重新生成图片模式")
             from image_processor import ImageProcessor
             image_processor = ImageProcessor()
-            # 仅更新提示词
+            # 仅更新提示词 (这里可能也需要调整以适应新的场景结构)
             try:
+                # 假设 process_scene_images 也能处理更新后的场景结构
                 key_scenes = image_processor.process_scene_images(
+                    key_scenes, 
+                    image_generator_type,
+                    aspect_ratio, 
+                    image_style, 
+                    custom_style,
+                    comfyui_style,
+                    no_regenerate=True
+                )
+                logger.info("成功更新场景提示词 (跳过生成)")
+            except Exception as e:
+                error_msg = f"更新场景提示词时出错: {e}"
+                print(error_msg)
+                logger.error(error_msg)
+        else:
+            # 调用新的并发图像生成函数
+            try:
+                logger.info("调用并发图像生成函数...")
+                # 注意：这里使用了 asyncio.run() 来执行异步函数
+                key_scenes = asyncio.run(generate_images_concurrently(
                     key_scenes,
                     image_generator_type,
                     aspect_ratio,
                     image_style,
                     custom_style,
                     comfyui_style,
-                    no_regenerate=True
-                )
-                logger.info("成功更新场景提示词")
+                    mj_concurrency
+                ))
+                logger.info("并发图像生成函数执行完毕。")
+                # 重新提取成功生成的图片文件列表（如果需要的话）
+                image_files = [s['image_file_generated'] for s in key_scenes if isinstance(s, dict) and s.get('image_file_generated')]
             except Exception as e:
-                error_msg = f"更新场景提示词时出错: {e}"
-                print(error_msg)
-                logger.error(error_msg)
-        else:
-            if image_generator_type.lower() == "comfyui":
-                # 使用ComfyUI生成图像
-                try:
-                    generator = ComfyUIGenerator(style=comfyui_style)
-                    
-                    # 打印可用的风格选项
-                    available_styles = generator.get_available_styles()
-                    print(f"可用的ComfyUI风格选项: {', '.join(available_styles)}")
-                    logger.info(f"可用的ComfyUI风格选项: {', '.join(available_styles)}")
-                    
-                    for i, scene in enumerate(key_scenes):
-                        try:
-                            # 确保提取正确的提示词
-                            if isinstance(scene, dict) and 'prompt' in scene:
-                                scene_prompt = scene['prompt']
-                            else:
-                                scene_prompt = str(scene)
-                            
-                            # 添加艺术风格
-                            base_style = story_analysis.get('art_style', '')
-                            # 如果用户提供了自定义风格，优先使用自定义风格
-                            if custom_style and custom_style.strip():
-                                scene_prompt = f"{scene_prompt}, {custom_style}, detailed facial expressions, dynamic poses"
-                                print(f"使用自定义风格: {custom_style}")
-                            # 否则，如果用户指定了预设风格，使用预设风格    
-                            elif image_style:
-                                # 直接使用场景提示词，不添加基础风格，避免风格混淆
-                                scene_prompt = f"{scene_prompt}, {image_style}, detailed facial expressions, dynamic poses, high quality"
-                            elif base_style:
-                                scene_prompt = f"{scene_prompt}, {base_style}, detailed facial expressions, dynamic poses, high quality"
-                            else:
-                                # 如果没有任何风格，添加通用高质量词汇
-                                scene_prompt = f"{scene_prompt}, detailed facial expressions, dynamic poses, high quality"
-                            
-                            print(f"场景 {i+1} 提示词: {scene_prompt}")
-                            logger.info(f"生成场景 {i+1} 图像, 提示词: {scene_prompt[:100]}...")
-                            
-                            # 使用与key_scenes.json中相同的文件名格式
-                            image_filename = scene['image_file'] if isinstance(scene, dict) and 'image_file' in scene else f"scene_{i+1:03d}.png"
-                            
-                            image_file = generator.generate_image(scene_prompt, image_filename)
-                            if image_file:
-                                image_files.append(image_file)
-                                logger.info(f"场景 {i+1} 图像生成成功: {image_file}")
-                            else:
-                                logger.warning(f"场景 {i+1} 图像生成结果为空")
-                        except Exception as e:
-                            error_msg = f"生成场景 {i+1} 图像时出错: {e}"
-                            print(error_msg)
-                            logger.exception(error_msg)
-                            # 继续处理下一个场景，避免整个流程中断
-                            continue
-                except Exception as e:
-                    error_msg = f"初始化ComfyUI生成器时出错: {e}"
-                    print(error_msg)
-                    logger.exception(error_msg)
-            else:
-                # 使用Midjourney生成图像
-                try:
-                    generator = MidjourneyGenerator()
-                    logger.info("已初始化Midjourney生成器")
-                    
-                    for i, scene in enumerate(key_scenes):
-                        try:
-                            # 确保提取正确的提示词
-                            if isinstance(scene, dict) and 'prompt' in scene:
-                                scene_prompt = scene['prompt']
-                            else:
-                                scene_prompt = str(scene)
-                            
-                            # 添加艺术风格
-                            base_style = story_analysis.get('art_style', '')
-                            # 如果用户提供了自定义风格，优先使用自定义风格
-                            if custom_style and custom_style.strip():
-                                scene_prompt = f"{scene_prompt}, {custom_style}, detailed facial expressions, dynamic poses"
-                                print(f"使用自定义风格: {custom_style}")
-                            # 否则，如果用户指定了预设风格，使用预设风格    
-                            elif image_style:
-                                # 直接使用场景提示词，不添加基础风格，避免风格混淆
-                                scene_prompt = f"{scene_prompt}, {image_style}, detailed facial expressions, dynamic poses, high quality"
-                            elif base_style:
-                                scene_prompt = f"{scene_prompt}, {base_style}, detailed facial expressions, dynamic poses, high quality"
-                            else:
-                                # 如果没有任何风格，添加通用高质量词汇
-                                scene_prompt = f"{scene_prompt}, detailed facial expressions, dynamic poses, high quality"
-                            
-                            print(f"场景 {i+1} 提示词: {scene_prompt}")
-                            logger.info(f"生成场景 {i+1} 图像, 提示词: {scene_prompt[:100]}...")
-                            
-                            # 使用与key_scenes.json中相同的文件名格式
-                            image_filename = scene['image_file'] if isinstance(scene, dict) and 'image_file' in scene else f"scene_{i+1:03d}.png"
-                            
-                            image_file = generator.generate_image(scene_prompt, image_filename, aspect_ratio=aspect_ratio)
-                            if image_file:
-                                image_files.append(image_file)
-                                logger.info(f"场景 {i+1} 图像生成成功: {image_file}")
-                            else:
-                                logger.warning(f"场景 {i+1} 图像生成结果为空")
-                        except Exception as e:
-                            error_msg = f"生成场景 {i+1} 图像时出错: {e}"
-                            print(error_msg)
-                            logger.exception(error_msg)
-                            # 继续处理下一个场景，避免整个流程中断
-                            continue
-                except Exception as e:
-                    error_msg = f"初始化Midjourney生成器时出错: {e}"
-                    print(error_msg)
-                    logger.exception(error_msg)
-        
-        logger.info(f"图像生成完成，共 {len(image_files)} 个图像")
+                 error_msg = f"并发生成图像时出错: {e}"
+                 print(error_msg)
+                 logger.exception(error_msg)
+                 # 根据错误处理策略决定是否继续
+
+        # 确认更新后的场景信息写回文件
+        with open("output/key_scenes.json", "w", encoding="utf-8") as f:
+            json.dump(key_scenes, f, ensure_ascii=False, indent=2)
+        print("场景信息已更新并保存")
         
         # 5. 生成字幕
         print("\n5. 生成字幕...")
@@ -566,6 +644,10 @@ if __name__ == "__main__":
                         help="选择TTS服务类型: voicevox (默认) 或 openai_tts")
     # 添加语音预设参数
     parser.add_argument("--voice_preset", help="设置语音预设名称，如'storyteller', 'formal', 'cheerful'等，仅用于OpenAI TTS")
+    # 添加语速参数
+    parser.add_argument("--speed_scale", type=float, default=1.0, help="设置语音合成的语速 (例如 0.5 到 2.0)")
+    # 添加 MJ 并发数参数
+    parser.add_argument("--mj_concurrency", type=int, default=3, choices=[3, 10], help="设置 Midjourney 任务并发数 (默认 3)")
     # 添加会说话角色参数
     parser.add_argument("--talking_character", action="store_true", help="启用会说话的角色效果")
     parser.add_argument("--closed_mouth_image", help="设置闭嘴图片路径")
@@ -640,6 +722,8 @@ if __name__ == "__main__":
         args.character_image,
         args.preserve_line_breaks,
         args.speaker_id,
+        args.speed_scale,
+        args.mj_concurrency,
         args.video_engine,
         args.no_regenerate_images,
         args.tts_service,
