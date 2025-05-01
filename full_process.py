@@ -297,7 +297,7 @@ async def generate_images_concurrently(key_scenes, image_generator_type, aspect_
     logger.info(f"图像生成完成，共成功生成 {len(image_files)} 个图像")
     return processed_scenes # 返回处理后的场景列表（可能包含生成的图片路径）
 
-def process_story(input_file: str, image_generator_type: str = "comfyui", aspect_ratio: str = None, image_style: str = None, comfyui_style: str = None, font_name: str = None, font_size: int = None, font_color: str = None, bg_opacity: float = None, character_image: str = None, preserve_line_breaks: bool = False, speaker_id: int = 13, speed_scale: float = 1.0, mj_concurrency: int = 3, video_engine: str = "auto", no_regenerate_images: bool = False, tts_service: str = "voicevox", voice_preset: str = None, custom_style: str = None, talking_character: bool = False, closed_mouth_image: str = None, open_mouth_image: str = None, audio_sensitivity: float = 0.04):
+def process_story(input_file: str, image_generator_type: str = "comfyui", aspect_ratio: str = None, image_style: str = None, comfyui_style: str = None, font_name: str = None, font_size: int = None, font_color: str = None, bg_opacity: float = None, character_image: str = None, preserve_line_breaks: bool = False, speaker_id: int = 13, speed_scale: float = 1.0, mj_concurrency: int = 3, video_engine: str = "auto", no_regenerate_images: bool = False, tts_service: str = "voicevox", voice_preset: str = None, custom_style: str = None, talking_character: bool = False, closed_mouth_image: str = None, open_mouth_image: str = None, audio_sensitivity: float = 0.04, subtitle_vertical_offset: int = 0):
     """
     完整的故事处理流程
     
@@ -325,6 +325,7 @@ def process_story(input_file: str, image_generator_type: str = "comfyui", aspect
         closed_mouth_image: 闭嘴图片路径
         open_mouth_image: 张嘴图片路径
         audio_sensitivity: 音频灵敏度，控制嘴巴开合的阈值
+        subtitle_vertical_offset: 字幕垂直偏移量 (负值向上，正值向下，单位像素)
     """
     # 检查输入文件是否存在
     full_input_path = get_full_path(input_file, "input_texts")
@@ -596,6 +597,8 @@ def process_story(input_file: str, image_generator_type: str = "comfyui", aspect
             subtitle_params["font_color"] = font_color
         if bg_opacity is not None:
             subtitle_params["bg_opacity"] = bg_opacity
+        if subtitle_vertical_offset != 0:
+            subtitle_params["subtitle_vertical_offset"] = subtitle_vertical_offset
         
         from add_subtitles import add_subtitles
         add_subtitles(final_video, srt_file, output_video, **subtitle_params)
@@ -653,6 +656,8 @@ if __name__ == "__main__":
     parser.add_argument("--closed_mouth_image", help="设置闭嘴图片路径")
     parser.add_argument("--open_mouth_image", help="设置张嘴图片路径")
     parser.add_argument("--audio_sensitivity", type=float, default=0.04, help="设置音频灵敏度，控制嘴巴开合的阈值")
+    # Add argument for vertical offset
+    parser.add_argument("--subtitle_vertical_offset", type=int, default=0, help="设置字幕垂直偏移量 (负值向上，正值向下，单位像素)")
     args = parser.parse_args()
 
     # 打印参数信息，便于调试
@@ -678,6 +683,7 @@ if __name__ == "__main__":
     print(f"  闭嘴图片: {args.closed_mouth_image}")
     print(f"  张嘴图片: {args.open_mouth_image}")
     print(f"  音频灵敏度: {args.audio_sensitivity}")
+    print(f"  字幕垂直偏移量: {args.subtitle_vertical_offset}")
 
     # 设置图像生成器 (优先使用--image_generator)
     image_generator = args.image_generator
@@ -732,7 +738,8 @@ if __name__ == "__main__":
         args.talking_character,
         args.closed_mouth_image,
         args.open_mouth_image,
-        args.audio_sensitivity
+        args.audio_sensitivity,
+        args.subtitle_vertical_offset
     ) 
     
     if result is None or isinstance(result, str) and result.startswith("错误:"):

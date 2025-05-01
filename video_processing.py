@@ -126,12 +126,13 @@ def update_video_resolution(resolution: str) -> None:
         config.save()  # 保存配置到文件
         print("设置视频分辨率为: 16:9 (1920x1080)")
 
-def build_command(input_file: str, config: VideoProcessingConfig) -> List[str]:
+def build_command(input_file: str, config: VideoProcessingConfig, subtitle_vertical_offset: int = 0) -> List[str]:
     """构建命令行
     
     Args:
         input_file: 输入文件名
         config: 视频处理配置
+        subtitle_vertical_offset: 字幕垂直偏移量 (新增)
         
     Returns:
         List[str]: 命令行参数列表
@@ -147,7 +148,7 @@ def build_command(input_file: str, config: VideoProcessingConfig) -> List[str]:
     _add_video_params(cmd, config.video_engine)
     _add_image_params(cmd, config.image_generator_type, config.aspect_ratio, 
                       config.image_style_type, config.custom_style, config.comfyui_style)
-    _add_subtitle_params(cmd, config.font_name, config.font_size, config.font_color, config.bg_opacity)
+    _add_subtitle_params(cmd, config.font_name, config.font_size, config.font_color, config.bg_opacity, subtitle_vertical_offset)
     _add_character_params(cmd, config.character_image, config.preserve_line_breaks, 
                          config.talking_character, config.closed_mouth_image, 
                          config.open_mouth_image, config.audio_sensitivity)
@@ -229,7 +230,8 @@ def _add_image_params(cmd: List[str], generator_type: str, aspect_ratio: str,
         print(f"添加ComfyUI风格: {comfyui_style}")
 
 def _add_subtitle_params(cmd: List[str], font_name: Optional[str], font_size: Optional[int], 
-                        font_color: Optional[str], bg_opacity: Optional[float]) -> None:
+                        font_color: Optional[str], bg_opacity: Optional[float],
+                        subtitle_vertical_offset: int = 0) -> None:
     """添加字幕相关参数
     
     Args:
@@ -238,6 +240,7 @@ def _add_subtitle_params(cmd: List[str], font_name: Optional[str], font_size: Op
         font_size: 字体大小
         font_color: 字体颜色
         bg_opacity: 背景不透明度
+        subtitle_vertical_offset: 字幕垂直偏移量 (默认0)
     """
     # 添加字幕设置参数
     if font_name and font_name != "默认":
@@ -257,6 +260,11 @@ def _add_subtitle_params(cmd: List[str], font_name: Optional[str], font_size: Op
     if bg_opacity is not None and bg_opacity != 0.5:
         cmd.extend(["--bg_opacity", str(bg_opacity)])
         print(f"添加背景不透明度: {bg_opacity}")
+    
+    # 新增：添加垂直偏移量参数（如果非默认值）
+    if subtitle_vertical_offset != 0:
+        cmd.extend(["--subtitle_vertical_offset", str(subtitle_vertical_offset)])
+        print(f"添加字幕垂直偏移量: {subtitle_vertical_offset}")
 
 def _add_character_params(cmd: List[str], character_image: Optional[str], preserve_line_breaks: bool,
                          talking_character: bool, closed_mouth_image: Optional[str], 
@@ -362,6 +370,7 @@ def process_story(
     image_style_type: str, custom_style: Optional[str] = None, comfyui_style: Optional[str] = None, 
     font_name: Optional[str] = None, font_size: Optional[int] = None, 
     font_color: Optional[str] = None, bg_opacity: Optional[float] = None, 
+    subtitle_vertical_offset: int = 0, 
     character_image: Optional[str] = None, preserve_line_breaks: bool = False, 
     voice_dropdown: str = DEFAULT_VOICE, video_engine: str = "auto", 
     video_resolution: str = "auto", talking_character: bool = False, 
@@ -434,7 +443,7 @@ def process_story(
         # 4. Build command (assuming build_command exists)
         logger.info("构建处理命令...")
         # Pass the new parameters to build_command if necessary
-        cmd = build_command(input_file, proc_config)
+        cmd = build_command(input_file, proc_config, subtitle_vertical_offset)
         log_stream.write("构建的命令:\n" + " ".join(cmd) + "\n\nRunning...") 
         status_message = "构建命令完成，开始执行...\n"
         yield status_message, None, log_stream.getvalue()

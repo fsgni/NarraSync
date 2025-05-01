@@ -177,7 +177,17 @@ def _create_subtitle_settings() -> tuple:
                 value=DEFAULT_BG_OPACITY,
                 step=0.1
             )
-    
+    # 新增：字幕垂直位置滑块
+    with gr.Row():
+        subtitle_vertical_offset = gr.Slider(
+            label="字幕垂直位置 (0为默认底部, 正值向下, 负值向上)",
+            minimum=-150,
+            maximum=150,
+            value=0,
+            step=1,
+            info="调整字幕距离底部的距离 (单位: 像素)"
+        )
+
     # 字体说明和管理收起到折叠面板中
     with gr.Accordion("字体管理", open=False):
         gr.Markdown("""
@@ -196,7 +206,7 @@ def _create_subtitle_settings() -> tuple:
             visible=False
         )
     
-    return font_name, refresh_fonts_button, font_size, font_color, bg_opacity, show_all_fonts_button, all_fonts_output
+    return font_name, refresh_fonts_button, font_size, font_color, bg_opacity, subtitle_vertical_offset, show_all_fonts_button, all_fonts_output
 
 def _create_voice_settings() -> tuple:
     """创建声音设置区域
@@ -333,7 +343,7 @@ def create_main_ui() -> Dict[str, Any]:
                     voice_dropdown, speed_scale_slider = _create_voice_settings()
                     
                     # 创建字幕设置区域 - 直接展开而不是放在折叠面板中
-                    font_name, refresh_fonts_button, font_size, font_color, bg_opacity, show_all_fonts_button, all_fonts_output = _create_subtitle_settings()
+                    font_name, refresh_fonts_button, font_size, font_color, bg_opacity, subtitle_vertical_offset, show_all_fonts_button, all_fonts_output = _create_subtitle_settings()
                 
                 with gr.TabItem("角色与效果"):
                     # 创建其他设置区域 - 直接展开而不是放在折叠面板中
@@ -376,6 +386,7 @@ def create_main_ui() -> Dict[str, Any]:
         "font_size": font_size,
         "font_color": font_color,
         "bg_opacity": bg_opacity,
+        "subtitle_vertical_offset": subtitle_vertical_offset,
         "show_all_fonts_button": show_all_fonts_button,
         "all_fonts_output": all_fonts_output,
         "voice_dropdown": voice_dropdown,
