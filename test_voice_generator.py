@@ -31,7 +31,7 @@ async def process_voice_generation(input_file: str, output_dir: str, speaker_id:
     available_voices = voice_generator.list_speakers()
     for id, name in available_voices.items():
         print(f"ID: {id} - {name}")
-        
+    
     voice_generator.set_speaker(speaker_id)
     voice_name = available_voices.get(speaker_id, f"未知名称 (ID: {speaker_id})")
     print(f"\n使用语音: {voice_name}")
@@ -43,13 +43,13 @@ async def process_voice_generation(input_file: str, output_dir: str, speaker_id:
     
     # 创建并发信号量
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
-
+    
     # 定义单个句子的并发合成任务
     async def synthesize_sentence_task(index, sentence, speed_scale):
         nonlocal voice_generator # 引用外部的 generator 实例
         audio_file = f"audio_{index:03d}.wav"
         audio_path = output_path / audio_file
-        
+            
         async with semaphore: # 控制并发数量
             print(f"开始处理句子 {index+1}/{len(sentences)}: {sentence[:30]}...")
             try:
@@ -104,20 +104,20 @@ async def process_voice_generation(input_file: str, output_dir: str, speaker_id:
                 "error": f"并发任务处理失败: {result}"
             })
         elif isinstance(result, dict):
-             audio_info.append(result) # 直接使用任务返回的字典
-             if "duration" in result:
-                 total_duration += result["duration"]
-                 successful_count += 1
+            audio_info.append(result) # 直接使用任务返回的字典
+            if "duration" in result:
+                total_duration += result["duration"]
+                successful_count += 1
         else:
-             # 未知结果类型，记录错误
-             print(f"任务 {i+1} 返回未知结果类型: {type(result)}")
-             original_sentence = sentences[i] if i < len(sentences) else "未知句子"
-             audio_info.append({
+            # 未知结果类型，记录错误
+            print(f"任务 {i+1} 返回未知结果类型: {type(result)}")
+            original_sentence = sentences[i] if i < len(sentences) else "未知句子"
+            audio_info.append({
                 "id": i,
                 "sentence": original_sentence, 
                 "error": f"并发任务返回未知结果类型: {type(result)}"
             })
-
+    
 
     # 保存音频信息到JSON文件
     info_file = output_path / f"{Path(input_file).stem}_audio_info.json"
@@ -164,18 +164,18 @@ if __name__ == "__main__":
         if args.import_dict: dict_manager.import_from_file(args.import_dict)
         if args.export_dict: dict_manager.export_to_file(args.export_dict)
         if args.add_common: dict_manager.add_common_corrections()
-
+    
     # 使用 asyncio.run 执行异步函数
     try:
         print("开始执行语音生成...")
         asyncio.run(process_voice_generation(
-            args.input, 
-            args.output, 
-            args.speaker, 
+        args.input, 
+        args.output, 
+        args.speaker, 
             args.speed,
-            not args.no_dict,
-            args.tts_service,
-            args.voice_preset
+        not args.no_dict,
+        args.tts_service,
+        args.voice_preset
         ))
         print("语音生成执行完毕。")
     except Exception as e:

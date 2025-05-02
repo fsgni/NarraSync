@@ -1,6 +1,7 @@
 import gradio as gr
 from typing import Dict, List, Any, Optional, Union
 from video_processing import process_story
+from ui_helpers import list_input_files, get_available_fonts, list_all_fonts, list_character_images, format_text_for_shorts_gpt
 
 # 常量定义
 DEFAULT_FONT_SIZE = 18
@@ -72,13 +73,14 @@ def _create_input_text_area() -> tuple:
     
     with gr.Row():
         refresh_button = gr.Button("刷新文件列表")
+        format_text_button_shorts = gr.Button("Shorts格式化 (GPT)", variant="secondary")
         file_dropdown = gr.Dropdown(
             label="或者选择一个文件",
             choices=list_input_files(),
             interactive=True
         )
     
-    return text_input, refresh_button, file_dropdown
+    return text_input, refresh_button, format_text_button_shorts, file_dropdown
 
 def _create_image_settings() -> tuple:
     """创建图像生成设置区域
@@ -186,8 +188,8 @@ def _create_subtitle_settings() -> tuple:
             value=0,
             step=1,
             info="调整字幕距离底部的距离 (单位: 像素)"
-        )
-
+            )
+    
     # 字体说明和管理收起到折叠面板中
     with gr.Accordion("字体管理", open=False):
         gr.Markdown("""
@@ -224,7 +226,7 @@ def _create_voice_settings() -> tuple:
     )
     
     # 语速调整滑块
-    speed_scale_slider = gr.Slider(
+    _scale_slider = gr.Slider(
         label="语速 (Speed)",
         minimum=0.5,
         maximum=2.0,
@@ -234,7 +236,7 @@ def _create_voice_settings() -> tuple:
         interactive=True
     )
     
-    return voice_dropdown, speed_scale_slider # Return both components
+    return voice_dropdown, _scale_slider # Keep internal name, but return key will be different
 
 def _create_other_settings() -> dict:
     """创建其他设置区域
@@ -330,7 +332,7 @@ def create_main_ui() -> Dict[str, Any]:
     with gr.Row():
         with gr.Column(scale=2):
             # 创建输入文本区域
-            text_input, refresh_button, file_dropdown = _create_input_text_area()
+            text_input, refresh_button, format_text_button_shorts, file_dropdown = _create_input_text_area()
             
             # 使用Tab整理各种设置，使UI更加紧凑
             with gr.Tabs():
@@ -340,7 +342,7 @@ def create_main_ui() -> Dict[str, Any]:
                 
                 with gr.TabItem("声音与字幕"):
                     # 创建声音设置区域
-                    voice_dropdown, speed_scale_slider = _create_voice_settings()
+                    voice_dropdown, speed_scale_slider_component = _create_voice_settings()
                     
                     # 创建字幕设置区域 - 直接展开而不是放在折叠面板中
                     font_name, refresh_fonts_button, font_size, font_color, bg_opacity, subtitle_vertical_offset, show_all_fonts_button, all_fonts_output = _create_subtitle_settings()
@@ -374,6 +376,7 @@ def create_main_ui() -> Dict[str, Any]:
         "text_input": text_input,
         "file_dropdown": file_dropdown,
         "refresh_button": refresh_button,
+        "format_text_button_shorts": format_text_button_shorts,
         "image_generator": image_generator,
         "aspect_ratio": aspect_ratio,
         "comfyui_style": comfyui_style,
@@ -390,7 +393,7 @@ def create_main_ui() -> Dict[str, Any]:
         "show_all_fonts_button": show_all_fonts_button,
         "all_fonts_output": all_fonts_output,
         "voice_dropdown": voice_dropdown,
-        "speed_scale_slider": speed_scale_slider,
+        "speed_scale_slider": speed_scale_slider_component,
         "video_engine": video_engine,
         "one_click_process_button": one_click_process_button,
         "output_text": output_text,
@@ -452,6 +455,14 @@ def create_main_ui() -> Dict[str, Any]:
         inputs=components["image_style_type"],
         outputs=components["custom_style"]
     )
+
+    # --- Add event handler for the new format button ---
+    components["format_text_button_shorts"].click(
+        fn=format_text_for_shorts_gpt, # Connect to the backend function
+        inputs=[components["text_input"]], # Input is the current text
+        outputs=[components["text_input"]] # Output updates the text input
+    )
+    # --- End event handler ---
 
     # 一键生成按钮点击事件 (确保输入列表正确引用 components 字典中的键)
     components["one_click_process_button"].click(

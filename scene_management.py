@@ -317,7 +317,7 @@ def regenerate_scene_image_with_retry(scene_id, scenes, image_generator_type, as
     # 使用 asyncio.run() 来同步执行异步函数
     try:
         status, message, image_file = asyncio.run(regenerate_scene_image_async(
-            scene_id, scenes, image_generator_type, aspect_ratio, image_style, custom_style, comfyui_style
+        scene_id, scenes, image_generator_type, aspect_ratio, image_style, custom_style, comfyui_style
         ))
     except Exception as run_err: # 捕获 asyncio.run 可能的错误
         logger.error(f"运行 regenerate_scene_image_async 时出错: {run_err}")
@@ -347,7 +347,7 @@ def regenerate_scene_image_with_retry(scene_id, scenes, image_generator_type, as
         # 使用 asyncio.run() 来同步执行异步函数
         try:
             status, message, image_file = asyncio.run(regenerate_scene_image_async(
-                scene_id, scenes, image_generator_type, aspect_ratio, image_style, custom_style, comfyui_style
+            scene_id, scenes, image_generator_type, aspect_ratio, image_style, custom_style, comfyui_style
             ))
         except Exception as run_err:
             logger.error(f"运行 regenerate_scene_image_async (重试) 时出错: {run_err}")

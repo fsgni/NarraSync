@@ -647,14 +647,14 @@ class VideoProcessor(VideoProcessorService):
                 img_aspect = img_clip.w / img_clip.h
                 video_aspect = video_width / video_height
                 
-                # 确保图片覆盖整个视频区域 - 增加到15%的安全边距
+                # 确保图片覆盖整个视频区域 - 减小安全边距
                 if img_aspect > video_aspect:  # 图片更宽
                     # 高度匹配视频，宽度按比例
-                    img_height = video_height * 1.15  # 增加15%的高度作为安全边距
+                    img_height = video_height * 1.08  # Changed from 1.15
                     img_width = img_height * img_aspect
                 else:  # 图片更高或相等
                     # 宽度匹配视频，高度按比例
-                    img_width = video_width * 1.15  # 增加15%的宽度作为安全边距
+                    img_width = video_width * 1.08  # Changed from 1.15
                     img_height = img_width / img_aspect
                 
                 # 调整图片大小
@@ -665,8 +665,8 @@ class VideoProcessor(VideoProcessorService):
                     # 随机选择平移方向
                     pan_direction = random.randint(0, 3)  # 0=左到右, 1=右到左, 2=上到下, 3=下到上
                     
-                    # 计算平移距离 (非常小的移动，只有5%)
-                    pan_distance = min(img_width, img_height) * 0.05
+                    # 计算平移距离 - 减小移动幅度
+                    pan_distance = min(img_width, img_height) * 0.03 # Changed from 0.05
                     
                     # 定义位置函数
                     def pos_func(t):
@@ -689,9 +689,9 @@ class VideoProcessor(VideoProcessorService):
                         return (int(x), int(y))
                     
                 elif effect_type == 1:  # 缓慢放大
-                    # 从小到大缓慢放大 (从100%到105%)
+                    # 从小到大缓慢放大 - 减小放大比例
                     start_scale = 1.0
-                    end_scale = 1.05
+                    end_scale = 1.03 # Changed from 1.05
                     
                     # 定义缩放函数
                     def zoom_func(t):
@@ -711,8 +711,8 @@ class VideoProcessor(VideoProcessorService):
                         return (int(x), int(y))
                     
                 else:  # 缓慢缩小
-                    # 从大到小缓慢缩小 (从105%到100%)
-                    start_scale = 1.05
+                    # 从大到小缓慢缩小 - 减小缩小比例
+                    start_scale = 1.03 # Changed from 1.05
                     end_scale = 1.0
                     
                     # 定义缩放函数

@@ -95,7 +95,7 @@ def parse_srt_time(time_str):
     """
     # 替换逗号为点
     time_str = time_str.replace(',', '.')
-    
+
     # 分割时间部分
     h, m, s = time_str.split(':')
     
@@ -268,11 +268,11 @@ def recompose_video_only(video_engine, character_image=None, font_name=None, fon
                 try:
                     output += "使用会说话的角色效果...\n"
                     print("创建新的会说话角色视频，使用最新场景...")
-                    
+                
                     # 准备闭嘴和张嘴图片路径
                     closed_mouth_path = os.path.join("input_images", closed_mouth_image)
                     open_mouth_path = os.path.join("input_images", open_mouth_image)
-                    
+                
                     # 检查图片是否存在
                     if not os.path.exists(closed_mouth_path) or not os.path.exists(open_mouth_path):
                         output += f"警告: 闭嘴或张嘴图片不存在，将使用普通角色图片\n"
@@ -950,7 +950,7 @@ with gr.Blocks(theme=gr_themes.Base()) as demo:
     with gr.Tabs():
         # 一键生成选项卡
         with gr.TabItem("一键生成"):
-                        
+            
             # 创建主UI组件
             main_ui = create_main_ui()
             
@@ -971,6 +971,7 @@ with gr.Blocks(theme=gr_themes.Base()) as demo:
             show_all_fonts_button = main_ui["show_all_fonts_button"]
             all_fonts_output = main_ui["all_fonts_output"]
             voice_dropdown = main_ui["voice_dropdown"]
+            speed_scale_slider = main_ui["speed_scale_slider"]
             preserve_line_breaks = main_ui["preserve_line_breaks"]
             character_image = main_ui["character_image"]
             refresh_character_button = main_ui["refresh_character_button"]
@@ -1148,7 +1149,10 @@ with gr.Blocks(theme=gr_themes.Base()) as demo:
         inputs=[
             text_input, file_dropdown, image_generator, aspect_ratio, image_style_type, 
             custom_style, comfyui_style, font_name, font_size, font_color, bg_opacity,
-            character_image, preserve_line_breaks, voice_dropdown, video_engine, video_resolution,
+            main_ui["subtitle_vertical_offset"],
+            character_image, preserve_line_breaks, voice_dropdown, 
+            speed_scale_slider, 
+            video_engine, video_resolution,
             talking_character, closed_mouth_image, open_mouth_image, audio_sensitivity
         ],
         outputs=[output_text, output_video, log_output_area]

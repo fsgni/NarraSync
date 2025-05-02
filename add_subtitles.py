@@ -11,7 +11,8 @@ def add_subtitles(video_file: str, srt_file: str, output_file: str,
                  font_name: str = "UD Digi Kyokasho N-B", 
                  font_size: int = 18, 
                  font_color: str = "FFFFFF", 
-                 bg_opacity: float = 0.5) -> str:
+                 bg_opacity: float = 0.5,
+                 subtitle_vertical_offset: int = 0) -> str:
     """
     为视频添加字幕
     
@@ -23,6 +24,7 @@ def add_subtitles(video_file: str, srt_file: str, output_file: str,
         font_size: 字体大小 (默认18，较小)
         font_color: 字体颜色 (默认白色 FFFFFF)
         bg_opacity: 背景透明度 (0-1，0为完全透明，1为不透明)
+        subtitle_vertical_offset: 字幕垂直偏移量 (默认0)
         
     返回:
         output_file: 输出视频文件路径
@@ -71,10 +73,26 @@ def add_subtitles(video_file: str, srt_file: str, output_file: str,
     bgr_color = font_color[4:6] + font_color[2:4] + font_color[0:2]
     logger.debug(f"字体颜色: #{font_color} (BGR格式: {bgr_color})")
     
+    # 计算最终的垂直边距 (MarginV)
+    # 假设默认底部边距是 20 像素
+    default_margin_v = 20
+    # 用户传入的 offset 正值向下（减少MarginV），负值向上（增加MarginV）
+    final_margin_v = max(0, default_margin_v - subtitle_vertical_offset) # 确保不小于0
+    logger.info(f"字幕垂直偏移量: {subtitle_vertical_offset}, 最终底部边距 (MarginV): {final_margin_v}")
+    
+    # 构建 styles 字符串，包含新的 MarginV
+    # 注意：原始 force_style 中包含了 FontName, FontSize, PrimaryColour, BackColour, BorderStyle, Outline, Shadow
+    # 我们需要保留这些，只修改 MarginV
+    styles = (
+        f"FontName={font_name},FontSize={font_size},"
+        f"PrimaryColour=&H{bgr_color},BackColour=&H{bg_alpha:02X}000000,"
+        f"BorderStyle=4,Outline=1,Shadow=1,MarginV={final_margin_v}"
+    )
+    
     cmd = [
         'ffmpeg', '-y',
         '-i', video_file,
-        '-vf', f"subtitles={srt_file}:force_style='FontName={font_name},FontSize={font_size},PrimaryColour=&H{bgr_color},BackColour=&H{bg_alpha}000000,BorderStyle=4,Outline=1,Shadow=1,MarginV=30'",
+        '-vf', f"subtitles={srt_file}:force_style='{styles}'",
         '-c:v', 'libx264',
         '-c:a', 'copy',
         output_file

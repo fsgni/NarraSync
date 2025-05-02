@@ -26,12 +26,21 @@ class StoryAnalyzer:
         load_dotenv()
         
         # 从环境变量获取API密钥
-        api_key = ""
+        api_key = os.getenv("OPENAI_API_KEY") # Read from environment variable
         if not api_key:
-            print("警告: 未找到OPENAI_API_KEY环境变量，请在.env文件中设置")
-            api_key = None  # 设置为None，这样会在调用API时明确报错
+            print("警告: 未找到OPENAI_API_KEY环境变量，请在.env文件中设置或设置为系统环境变量")
+            # Consider raising an error or using a dummy client if key is essential
+            # For now, let OpenAI handle the missing key error during client init
+            # api_key = None 
         
-        self.client = OpenAI(api_key=api_key)
+        try:
+             self.client = OpenAI(api_key=api_key)
+        except Exception as e:
+             print(f"初始化 OpenAI 客户端失败: {e}。请检查 API 密钥是否正确设置。")
+             # Handle the error appropriately, maybe raise it or set client to None
+             self.client = None # Set client to None if init fails
+             # raise e # Or re-raise the exception
+
         self.model = "gpt-4o-mini" # 必须使用 gpt-4o-mini 模型 不得擅自修改
         self.core_elements = {}
         self.input_file = None

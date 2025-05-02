@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import List, Dict, Tuple, Optional, Any, Union
 from PIL import Image, ImageDraw
 from functools import lru_cache
+import random
 
 # 常量定义
 INPUT_TEXTS_DIR = "input_texts"
@@ -447,3 +448,88 @@ def list_title_background_images() -> List[str]:
         image_files = list_files_with_extension(TITLE_BG_DIR, IMAGE_EXTENSIONS)
         
     return image_files 
+
+def format_text_for_shorts_gpt(raw_text: str) -> str:
+    """
+    使用 GPT-4o Mini 将文本格式化为适合短视频的字幕。
+
+    Args:
+        raw_text: 原始输入文本。
+
+    Returns:
+        格式化后的文本。
+    """
+    if not raw_text or not raw_text.strip():
+        return "" # Return empty if input is empty
+
+    print("开始使用 GPT 格式化文本 (Shorts 格式)...")
+    
+    # --- 构建 Prompt ---
+    # 指示模型进行分行，每行尽量控制在7个字符左右，适应短视频竖屏显示
+    # 强调保持自然和易读性，避免生硬截断
+    prompt = f"""
+请将以下日文文本重新分行，以适应短视频（竖屏）的字幕显示。
+
+格式要求：
+1.  每行尽量控制在 **7 个字符以内**。
+2.  断句和换行应尽可能**自然、符合语义**，便于阅读。
+3.  保持原文的**意思和风格**不变。
+4.  最终输出**只需要格式化后的文本**，不要包含任何解释或其他多余内容。
+
+原始文本：
+「{raw_text}」
+
+格式化后的文本：
+"""
+
+    # --- 调用 OpenAI API (占位符) ---
+    formatted_text = ""
+    try:
+        # 1. 获取 API Key (例如从配置、环境变量等)
+        # --- Use placeholder key for now --- 
+        api_key = os.getenv("OPENAI_API_KEY") # Read from environment variable
+        if not api_key:
+            print("错误: OpenAI API Key 未在环境变量中配置!")
+            return f"错误: OpenAI API Key 未配置!\n\n{raw_text}" # 返回错误信息和原文
+
+        # 2. 初始化 OpenAI 客户端 (需要 pip install openai)
+        # --- Make sure openai library is installed --- 
+        from openai import OpenAI
+        client = OpenAI(api_key=api_key)
+
+        # 3. 调用 API
+        # --- Make the API call --- 
+        response = client.chat.completions.create(
+            model="gpt-4o-mini", # Use gpt-4o-mini model
+            messages=[
+                {"role": "system", "content": "你是一个文本格式化助手，专门为短视频优化字幕分行。"},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.5, # Adjust temperature if needed
+            max_tokens=1024 # Adjust max tokens if needed
+        )
+        
+        # 4. 提取结果
+        # --- Extract the formatted text --- 
+        if response.choices:
+            formatted_text = response.choices[0].message.content.strip()
+            print("GPT 格式化完成。")
+        else:
+            print("警告: GPT 未返回有效结果。")
+            formatted_text = f"警告: GPT 未返回有效结果。\n\n{raw_text}"
+
+        # ---- 移除临时占位符逻辑 ----
+        # print("警告: OpenAI API 调用部分未实现，返回添加了注释的原始文本。")
+        # formatted_text = f"--- GPT 格式化 (待实现) ---
+# {raw_text}"
+        # ---- 结束移除临时占位符 ----
+        
+    except ImportError:
+        print("错误: openai 库未安装。请运行 'pip install openai' 安装。")
+        formatted_text = f"错误: openai 库未安装。请运行 'pip install openai' 安装。\n\n{raw_text}"
+    except Exception as e:
+        print(f"调用 GPT API 时出错: {e}")
+        # 返回错误信息和原始文本，以便用户知道发生了什么
+        formatted_text = f"错误: 调用 GPT API 时出错: {e}\n\n{raw_text}"
+
+    return formatted_text 

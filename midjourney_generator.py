@@ -217,7 +217,7 @@ class MidjourneyGenerator:
         for i in range(max_retries):
             # 注意: check_task_status 本身还是同步的，但在异步函数中调用没问题
             # 如果 check_task_status 网络IO很重，理想情况下也应改为异步，但暂时先这样
-            status_result = self.check_task_status(task_id) 
+            status_result = self.check_task_status(task_id)
             status = status_result.get("status")
             progress = status_result.get("progress", "未知")
             

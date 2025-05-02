@@ -126,13 +126,14 @@ def update_video_resolution(resolution: str) -> None:
         config.save()  # 保存配置到文件
         print("设置视频分辨率为: 16:9 (1920x1080)")
 
-def build_command(input_file: str, config: VideoProcessingConfig, subtitle_vertical_offset: int = 0) -> List[str]:
+def build_command(input_file: str, config: VideoProcessingConfig, subtitle_vertical_offset: int = 0, speed_scale: float = 1.0) -> List[str]:
     """构建命令行
     
     Args:
         input_file: 输入文件名
         config: 视频处理配置
         subtitle_vertical_offset: 字幕垂直偏移量 (新增)
+        speed_scale: 语速调整 (新增)
         
     Returns:
         List[str]: 命令行参数列表
@@ -144,7 +145,7 @@ def build_command(input_file: str, config: VideoProcessingConfig, subtitle_verti
     cmd = [sys.executable, "full_process.py", input_file, "--image_generator", config.image_generator_type]
     
     # 添加配置参数
-    _add_audio_params(cmd, service_type, speaker_id, voice_preset)
+    _add_audio_params(cmd, service_type, speaker_id, voice_preset, speed_scale)
     _add_video_params(cmd, config.video_engine)
     _add_image_params(cmd, config.image_generator_type, config.aspect_ratio, 
                       config.image_style_type, config.custom_style, config.comfyui_style)
@@ -157,7 +158,7 @@ def build_command(input_file: str, config: VideoProcessingConfig, subtitle_verti
     print("\n执行命令:", " ".join(cmd))
     return cmd
 
-def _add_audio_params(cmd: List[str], service_type: str, speaker_id: int, voice_preset: Optional[str]) -> None:
+def _add_audio_params(cmd: List[str], service_type: str, speaker_id: int, voice_preset: Optional[str], speed_scale: float = 1.0) -> None:
     """添加音频相关参数
     
     Args:
@@ -165,6 +166,7 @@ def _add_audio_params(cmd: List[str], service_type: str, speaker_id: int, voice_
         service_type: 服务类型
         speaker_id: 说话人ID
         voice_preset: 语音预设
+        speed_scale: 语速调整 (新增)
     """
     # 添加语音ID参数
     cmd.extend(["--speaker_id", str(speaker_id)])
@@ -180,6 +182,11 @@ def _add_audio_params(cmd: List[str], service_type: str, speaker_id: int, voice_
         preset_to_use = voice_preset or "storyteller"
         cmd.extend(["--voice_preset", preset_to_use])
         print(f"添加OpenAI TTS语音预设: {preset_to_use}")
+
+    # 添加语速调整参数
+    if speed_scale != 1.0:
+        cmd.extend(["--speed", str(speed_scale)])
+        print(f"添加语速调整: {speed_scale}")
 
 def _add_video_params(cmd: List[str], video_engine: str) -> None:
     """添加视频相关参数
@@ -324,9 +331,9 @@ def run_process(cmd: List[str]) -> Generator[Tuple[str, Optional[str]], None, No
             stdout=subprocess.PIPE, 
             stderr=subprocess.STDOUT,
             text=True,
-            encoding='utf-8',
-            errors='replace', 
-            creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
+                encoding='utf-8',
+                errors='replace', 
+                creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
         )
     
         if process.stdout:
@@ -341,14 +348,14 @@ def run_process(cmd: List[str]) -> Generator[Tuple[str, Optional[str]], None, No
         return_code = process.wait()
         
         if return_code != 0:
-            yield f"错误: 进程返回错误码 {return_code}\n", None
+            yield f"错误: 进程返回错误码 {return_code}\\n", None
         else:
-            yield "进程成功完成\n", None
+            yield "进程成功完成\\n", None
             
     except FileNotFoundError:
-        yield f"错误: 无法找到执行程序 {cmd[0]}. 请确保Python和相关依赖已正确安装并添加到PATH。\n", None
+        yield f"错误: 无法找到执行程序 {cmd[0]}. 请确保Python和相关依赖已正确安装并添加到PATH。\\n", None
     except Exception as e:
-        yield f"运行子进程时出错: {e}\n", None
+        yield f"运行子进程时出错: {e}\\n", None
     finally:
         # Ensure resources are cleaned up even if errors occur during Popen
         if process and process.stdout and not process.stdout.closed:
@@ -367,18 +374,19 @@ def find_latest_video() -> Optional[str]:
 
 def process_story(
     text_input: str, selected_file: str, image_generator_type: str, aspect_ratio: str, 
-    image_style_type: str, custom_style: Optional[str] = None, comfyui_style: Optional[str] = None, 
-    font_name: Optional[str] = None, font_size: Optional[int] = None, 
-    font_color: Optional[str] = None, bg_opacity: Optional[float] = None, 
+                  image_style_type: str, custom_style: Optional[str] = None, comfyui_style: Optional[str] = None, 
+                  font_name: Optional[str] = None, font_size: Optional[int] = None, 
+                  font_color: Optional[str] = None, bg_opacity: Optional[float] = None, 
     subtitle_vertical_offset: int = 0, 
-    character_image: Optional[str] = None, preserve_line_breaks: bool = False, 
-    voice_dropdown: str = DEFAULT_VOICE, video_engine: str = "auto", 
-    video_resolution: str = "auto", talking_character: bool = False, 
-    closed_mouth_image: Optional[str] = None, open_mouth_image: Optional[str] = None, 
+                  character_image: Optional[str] = None, preserve_line_breaks: bool = False, 
+                  voice_dropdown: str = DEFAULT_VOICE, 
+                  speed_scale: float = 1.0, # Default value from full_process
+                  video_engine: str = "auto", 
+                  video_resolution: str = "auto", talking_character: bool = False, 
+                  closed_mouth_image: Optional[str] = None, open_mouth_image: Optional[str] = None, 
     audio_sensitivity: float = DEFAULT_AUDIO_SENSITIVITY, 
     # Add missing parameters from ui_components call
     mj_concurrency: int = 3, # Default value from full_process
-    speed_scale: float = 1.0, # Default value from full_process
     no_regenerate_images: bool = False # Value from placeholder
 ) -> Generator[Union[Tuple[str, Optional[str], str]], None, None]:
     """处理故事文本并生成视频，捕获日志信息
@@ -420,8 +428,8 @@ def process_story(
             talking_character=talking_character, closed_mouth_image=closed_mouth_image,
             open_mouth_image=open_mouth_image, audio_sensitivity=audio_sensitivity,
             # Ensure mj_concurrency, speed_scale, no_regenerate_images are handled by config or passed separately
-        )
-        
+    )
+    
         # 1. Validate inputs (assuming validate_inputs exists)
         logger.info("验证输入...")
         error = validate_inputs(proc_config)
@@ -443,7 +451,7 @@ def process_story(
         # 4. Build command (assuming build_command exists)
         logger.info("构建处理命令...")
         # Pass the new parameters to build_command if necessary
-        cmd = build_command(input_file, proc_config, subtitle_vertical_offset)
+        cmd = build_command(input_file, proc_config, subtitle_vertical_offset, speed_scale)
         log_stream.write("构建的命令:\n" + " ".join(cmd) + "\n\nRunning...") 
         status_message = "构建命令完成，开始执行...\n"
         yield status_message, None, log_stream.getvalue()
@@ -501,7 +509,7 @@ def process_story(
             logger.error(error_msg)
             error_occurred = True
             raise Exception(error_msg)
-            
+    
         # 6. Find latest video
         logger.info("查找生成的视频文件...")
         final_video_path = find_latest_video()
