@@ -266,7 +266,7 @@ def recompose_video_only(video_engine, character_image=None, font_name=None, fon
             # 判断是否启用会说话的角色
             if talking_character and closed_mouth_image and open_mouth_image and closed_mouth_image != "不使用角色图片" and open_mouth_image != "不使用角色图片":
                 try:
-                    output += "使用会说话的角色效果...\n"
+                    output += "使用会说话的角色效果...\\n"
                     print("创建新的会说话角色视频，使用最新场景...")
                 
                     # 准备闭嘴和张嘴图片路径
@@ -275,7 +275,7 @@ def recompose_video_only(video_engine, character_image=None, font_name=None, fon
                 
                     # 检查图片是否存在
                     if not os.path.exists(closed_mouth_path) or not os.path.exists(open_mouth_path):
-                        output += f"警告: 闭嘴或张嘴图片不存在，将使用普通角色图片\n"
+                        output += f"警告: 闭嘴或张嘴图片不存在，将使用普通角色图片\\n"
                         # 使用普通角色图片模式
                         from add_character_image import add_character_image_to_video
                         
@@ -300,17 +300,17 @@ def recompose_video_only(video_engine, character_image=None, font_name=None, fon
                         )
                     
                     if success:
-                        output += f"成功添加会说话的角色图片到视频\n"
+                        output += f"成功添加会说话的角色图片到视频\\n"
                         # 使用带有角色图片的视频作为最终视频
                         current_video = final_video_with_char
                     else:
-                        output += f"添加会说话的角色图片失败，将使用原始视频继续处理\n"
+                        output += f"添加会说话的角色图片失败，将使用原始视频继续处理\\n"
                 except Exception as e:
-                    output += f"添加会说话角色图片过程中出错: {str(e)}\n"
+                    output += f"添加会说话角色图片过程中出错: {str(e)}\\n"
                     import traceback
                     error_details = traceback.format_exc()
-                    logger.error(f"添加会说话角色图片失败: {str(e)}\n{error_details}")
-                    output += "将使用原始视频继续处理\n"
+                    logger.error(f"添加会说话角色图片失败: {str(e)}\\n{error_details}")
+                    output += "将使用原始视频继续处理\\n"
             else:
                 # 使用普通角色图片
                 try:
@@ -321,16 +321,14 @@ def recompose_video_only(video_engine, character_image=None, font_name=None, fon
                     
                     success = add_character_image_to_video(current_video, character_image_path, final_video_with_char)
                     if success:
-                        output += f"成功添加角色图片到视频\n"
+                        output += f"成功添加角色图片到视频\\n"
                         current_video = final_video_with_char
-                    else:
-                        output += f"添加角色图片失败，将使用原始视频继续处理\n"
                 except Exception as e:
-                    output += f"添加角色图片过程中出错: {e}\n"
+                    output += f"添加角色图片过程中出错: {e}\\n"
                     import traceback
                     error_details = traceback.format_exc()
-                    logger.error(f"添加角色图片失败: {str(e)}\n{error_details}")
-                    output += "将使用原始视频继续处理\n"
+                    logger.error(f"添加角色图片失败: {str(e)}\\n{error_details}")
+                    output += "将使用原始视频继续处理\\n"
         
         # 4. 添加字幕
         if os.path.exists(srt_file):
@@ -386,7 +384,7 @@ def recompose_video_only(video_engine, character_image=None, font_name=None, fon
         # 复制当前视频到最终输出文件
         final_output = output_video_final  # 使用正确的最终输出文件名 webui_input_final.mp4
         print(f"正在将 {current_video} 复制到 {final_output}")
-        output += f"正在将 {current_video} 复制到 {final_output}\n"
+        output += f"正在将 {current_video} 复制到 {final_output}\\n"
         shutil.copy2(current_video, final_output)
         print(f"最终视频已创建: {final_output}")
         
@@ -395,7 +393,7 @@ def recompose_video_only(video_engine, character_image=None, font_name=None, fon
     except Exception as e:
         import traceback
         error_details = traceback.format_exc()
-        logger.error(f"重新合成视频失败: {str(e)}\n{error_details}")
+        logger.error(f"重新合成视频失败: {str(e)}\\n{error_details}")
         return None
 
 # 重新生成指定场景的图片（带重试功能）
@@ -977,6 +975,7 @@ with gr.Blocks(theme=gr_themes.Base()) as demo:
             refresh_character_button = main_ui["refresh_character_button"]
             video_engine = main_ui["video_engine"]
             video_resolution = main_ui["video_resolution"]
+            max_scene_duration_slider = main_ui["max_scene_duration_slider"]
             one_click_process_button = main_ui["one_click_process_button"]
             output_text = main_ui["output_text"]
             output_video = main_ui["output_video"]
@@ -1153,7 +1152,8 @@ with gr.Blocks(theme=gr_themes.Base()) as demo:
             character_image, preserve_line_breaks, voice_dropdown, 
             speed_scale_slider, 
             video_engine, video_resolution,
-            talking_character, closed_mouth_image, open_mouth_image, audio_sensitivity
+            talking_character, closed_mouth_image, open_mouth_image, audio_sensitivity,
+            max_scene_duration_slider
         ],
         outputs=[output_text, output_video, log_output_area]
     ).then(

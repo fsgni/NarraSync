@@ -14,6 +14,7 @@ import logging
 import io
 from ui_helpers import extract_voice_id, cleanup_output_directories
 from config import config
+import shutil
 
 # 常量定义
 INPUT_TEXTS_DIR = "input_texts"
@@ -126,14 +127,15 @@ def update_video_resolution(resolution: str) -> None:
         config.save()  # 保存配置到文件
         print("设置视频分辨率为: 16:9 (1920x1080)")
 
-def build_command(input_file: str, config: VideoProcessingConfig, subtitle_vertical_offset: int = 0, speed_scale: float = 1.0) -> List[str]:
+def build_command(input_file: str, config: VideoProcessingConfig, subtitle_vertical_offset: int = 0, speed_scale: float = 1.0, max_scene_duration_from_ui: float = 5.0) -> List[str]:
     """构建命令行
     
     Args:
         input_file: 输入文件名
         config: 视频处理配置
-        subtitle_vertical_offset: 字幕垂直偏移量 (新增)
-        speed_scale: 语速调整 (新增)
+        subtitle_vertical_offset: 字幕垂直偏移量
+        speed_scale: 语速调整
+        max_scene_duration_from_ui: WebUI传入的场景最大时长 (新增)
         
     Returns:
         List[str]: 命令行参数列表
@@ -142,7 +144,8 @@ def build_command(input_file: str, config: VideoProcessingConfig, subtitle_verti
     service_type, speaker_id, voice_preset = extract_voice_id(config.voice_dropdown)
     
     # 构建基础命令
-    cmd = [sys.executable, "full_process.py", input_file, "--image_generator", config.image_generator_type]
+    python_executable = shutil.which("python") or shutil.which("python3") or sys.executable
+    cmd = [python_executable, "full_process.py", input_file, "--image_generator", config.image_generator_type]
     
     # 添加配置参数
     _add_audio_params(cmd, service_type, speaker_id, voice_preset, speed_scale)
@@ -154,6 +157,11 @@ def build_command(input_file: str, config: VideoProcessingConfig, subtitle_verti
                          config.talking_character, config.closed_mouth_image, 
                          config.open_mouth_image, config.audio_sensitivity)
     
+    # --- Add the max_scene_duration to the command for full_process.py ---
+    if max_scene_duration_from_ui is not None: # Check if it was provided
+        cmd.extend(["--max_scene_duration", str(max_scene_duration_from_ui)])
+        print(f"添加场景最大时长参数: --max_scene_duration {max_scene_duration_from_ui}")
+
     # 打印完整命令
     print("\n执行命令:", " ".join(cmd))
     return cmd
@@ -374,20 +382,20 @@ def find_latest_video() -> Optional[str]:
 
 def process_story(
     text_input: str, selected_file: str, image_generator_type: str, aspect_ratio: str, 
-                  image_style_type: str, custom_style: Optional[str] = None, comfyui_style: Optional[str] = None, 
-                  font_name: Optional[str] = None, font_size: Optional[int] = None, 
-                  font_color: Optional[str] = None, bg_opacity: Optional[float] = None, 
-    subtitle_vertical_offset: int = 0, 
-                  character_image: Optional[str] = None, preserve_line_breaks: bool = False, 
-                  voice_dropdown: str = DEFAULT_VOICE, 
-                  speed_scale: float = 1.0, # Default value from full_process
-                  video_engine: str = "auto", 
-                  video_resolution: str = "auto", talking_character: bool = False, 
-                  closed_mouth_image: Optional[str] = None, open_mouth_image: Optional[str] = None, 
-    audio_sensitivity: float = DEFAULT_AUDIO_SENSITIVITY, 
-    # Add missing parameters from ui_components call
-    mj_concurrency: int = 3, # Default value from full_process
-    no_regenerate_images: bool = False # Value from placeholder
+    image_style_type: str, custom_style: Optional[str] = None, comfyui_style: Optional[str] = None, 
+    font_name: Optional[str] = None, font_size: Optional[int] = None, 
+    font_color: Optional[str] = None, bg_opacity: Optional[float] = None, 
+    subtitle_vertical_offset: int = 0,
+    character_image: Optional[str] = None, preserve_line_breaks: bool = False, 
+    voice_dropdown: str = DEFAULT_VOICE, 
+    speed_scale: float = 1.0, 
+    video_engine: str = "auto", 
+    video_resolution: str = "auto", 
+    talking_character: bool = False, 
+    closed_mouth_image: Optional[str] = None, 
+    open_mouth_image: Optional[str] = None, 
+    audio_sensitivity: float = DEFAULT_AUDIO_SENSITIVITY,
+    max_scene_duration_from_ui: float = 5.0 
 ) -> Generator[Union[Tuple[str, Optional[str], str]], None, None]:
     """处理故事文本并生成视频，捕获日志信息
         
@@ -412,6 +420,11 @@ def process_story(
     error_occurred = False
     log_string = ""
     
+    # --- ADD DEBUG PRINT HERE ---
+    print(f"DEBUG video_processing.py: process_story received max_scene_duration_from_ui = {max_scene_duration_from_ui}")
+    logger.info(f"DEBUG: process_story received max_scene_duration_from_ui = {max_scene_duration_from_ui}") # Also log it
+    # --- END DEBUG PRINT ---
+
     # The main try block for the entire process
     try:
         logger.info("开始处理故事...")
@@ -451,7 +464,7 @@ def process_story(
         # 4. Build command (assuming build_command exists)
         logger.info("构建处理命令...")
         # Pass the new parameters to build_command if necessary
-        cmd = build_command(input_file, proc_config, subtitle_vertical_offset, speed_scale)
+        cmd = build_command(input_file, proc_config, subtitle_vertical_offset, speed_scale, max_scene_duration_from_ui)
         log_stream.write("构建的命令:\n" + " ".join(cmd) + "\n\nRunning...") 
         status_message = "构建命令完成，开始执行...\n"
         yield status_message, None, log_stream.getvalue()

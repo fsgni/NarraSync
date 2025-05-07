@@ -648,13 +648,14 @@ class VideoProcessor(VideoProcessorService):
                 video_aspect = video_width / video_height
                 
                 # 确保图片覆盖整个视频区域 - 减小安全边距
+                safe_margin_factor = 1.15 # Changed from 1.08 to 1.15
                 if img_aspect > video_aspect:  # 图片更宽
                     # 高度匹配视频，宽度按比例
-                    img_height = video_height * 1.08  # Changed from 1.15
+                    img_height = video_height * safe_margin_factor
                     img_width = img_height * img_aspect
                 else:  # 图片更高或相等
                     # 宽度匹配视频，高度按比例
-                    img_width = video_width * 1.08  # Changed from 1.15
+                    img_width = video_width * safe_margin_factor
                     img_height = img_width / img_aspect
                 
                 # 调整图片大小
@@ -712,8 +713,10 @@ class VideoProcessor(VideoProcessorService):
                     
                 else:  # 缓慢缩小
                     # 从大到小缓慢缩小 - 减小缩小比例
-                    start_scale = 1.03 # Changed from 1.05
-                    end_scale = 1.0
+                    # start_scale = 1.03 # Changed from 1.05
+                    # end_scale = 1.0
+                    start_scale = 1.0 + (safe_margin_factor - 1.0) * 0.8 # Start from 80% of the new margin
+                    end_scale = 1.005 # Ensure it ends slightly larger than the base calculated img_width/height
                     
                     # 定义缩放函数
                     def zoom_func(t):

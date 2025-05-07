@@ -142,19 +142,20 @@ class StoryAnalyzer:
             
         analysis_prompt = """
         You are tasked with analyzing a story and extracting key elements.
-        
-        Analyze the following story and extract these elements in valid JSON format:
+        Analyze the following story and extract these elements in valid JSON format.
+        IMPORTANT: All values in the JSON output (e.g., culture, location, era, style, appearance, role) MUST be in ENGLISH. If the original story text is in another language, translate these extracted elements into English.
+
         {
             "setting": {
-                "culture": "the specific cultural background of the story",
-                "location": "the specific location where the story takes place",
-                "era": "the specific time period or era of the story",
-                "style": "the overall visual style that would suit this story"
+                "culture": "the specific cultural background (in English)",
+                "location": "the specific location (in English)",
+                "era": "the specific time period or era (in English)",
+                "style": "the overall visual style that would suit this story (in English, e.g., 'Impressionistic', 'Cyberpunk', 'Realistic oil painting')"
             },
             "characters": {
-                "character_name": {
-                    "appearance": "brief visual description",
-                    "role": "character's role in the story",
+                "character_name_in_english_or_transliterated": { 
+                    "appearance": "brief visual description (in English)",
+                    "role": "character's role in the story (in English)",
                     "gender": "male/female"
                 }
             }
@@ -169,7 +170,7 @@ class StoryAnalyzer:
         
         analysis_prompt += """
         Be accurate and specific. If the story doesn't explicitly mention certain elements, make reasonable inferences based on the context.
-        Your response must be ONLY valid JSON without any explanations or apologies.
+        Your response must be ONLY valid JSON without any explanations or apologies, and all string values within the JSON must be in ENGLISH.
         """
         
         # 定义默认结果，以防API调用失败
@@ -337,7 +338,10 @@ class StoryAnalyzer:
         print(f"分析结果 - 地点: {self.story_location}, 时代: {self.story_era}")
     
     def _translate_scene_data(self, culture: str, location: str, era: str, style: str, context: str, character_info: str) -> Dict:
-        """翻译场景数据到英语，用于减少代码重复"""
+        """翻译场景数据到英语，用于减少代码重复
+        DEPRECATED: This method is no longer primary as analysis prompt now requests English output.
+        Kept for potential fallback or specific translation needs if direct English output fails.
+        """
         translation_prompt = f"""
         Translate the following text to English if it's not already in English.
         For culture, location, era, and style terms, provide the most appropriate English equivalent.
@@ -561,21 +565,15 @@ class StoryAnalyzer:
         character_info = "; ".join(character_descriptions)
         
         try:
-            # 翻译数据到英语
-            translated_data = self._translate_scene_data(culture, location, era, style, context, character_info)
+            # 假设 _analyze_single_segment 已经返回了英文信息
+            # 我们现在直接使用 culture, location, era, style 这些变量，它们应该已经是英文了
+            print(f"用于生成场景描述的背景信息 - 文化: {culture}, 地点: {location}, 时代: {era}, 风格: {style}")
+            if character_info: # character_info 应该也是英文的（来自分析阶段的角色描述）
+                print(f"用于生成场景描述的角色信息: {character_info}")
             
-            culture = translated_data.get("culture", culture)
-            location = translated_data.get("location", location)
-            era = translated_data.get("era", era)
-            style = translated_data.get("style", style)
-            context = translated_data.get("context", context)
-            character_info = translated_data.get("character_info", character_info)
-            
-            print(f"翻译后的背景信息 - 文化: {culture}, 地点: {location}, 时代: {era}, 风格: {style}")
-            if character_info:
-                print(f"翻译后的角色信息: {character_info}")
-            
-            # 生成场景描述
+            # 生成场景描述 (现在传入的 context 应该是原始的，但 character_info 已经是英文)
+            # _generate_scene_description 的 prompt 也需要确保它知道 context 可能不是英文
+            # 或者，我们假设 context (sentences) 也会被翻译，但这不在此次修改范围，目前 context 主要用于 GPT 理解场景内容
             scene = self._generate_scene_description(culture, location, era, style, context, character_info)
             
             # 清理场景描述
@@ -663,20 +661,23 @@ class StoryAnalyzer:
         character_info = "; ".join(character_descriptions)
         
         try:
-            # 翻译数据到英语
-            translated_data = self._translate_scene_data(culture, location, era, style, context, character_info)
-            
-            culture = translated_data.get("culture", culture)
-            location = translated_data.get("location", location)
-            era = translated_data.get("era", era)
-            style = translated_data.get("style", style)
-            context = translated_data.get("context", context)
-            character_info = translated_data.get("character_info", character_info)
-            
-            print(f"段落 {segment_index+1} 翻译后的背景信息 - 文化: {culture}, 地点: {location}, 时代: {era}, 风格: {style}")
+            # --- REMOVE TRANSLATION STEP for segment specific prompt ---
+            # translated_data = self._translate_scene_data(culture, location, era, style, context, character_info)
+            # culture = translated_data.get("culture", culture)
+            # location = translated_data.get("location", location)
+            # era = translated_data.get("era", era)
+            # style = translated_data.get("style", style)
+            # context = translated_data.get("context", context)
+            # character_info = translated_data.get("character_info", character_info)
+            # print(f"段落 {segment_index+1} 翻译后的背景信息 - 文化: {culture}, 地点: {location}, 时代: {era}, 风格: {style}")
+            # if character_info:
+            #     print(f"翻译后的角色信息: {character_info}")
+            # --- END REMOVE TRANSLATION STEP --- 
+
+            print(f"段落 {segment_index+1} 用于生成场景描述的背景信息 - 文化: {culture}, 地点: {location}, 时代: {era}, 风格: {style}")
             if character_info:
-                print(f"翻译后的角色信息: {character_info}")
-            
+                print(f"段落 {segment_index+1} 用于生成场景描述的角色信息: {character_info}")
+
             # 生成场景描述
             scene = self._generate_scene_description(culture, location, era, style, context, character_info)
             
@@ -712,7 +713,7 @@ class StoryAnalyzer:
         # 在实际应用中，可以实现更复杂的匹配逻辑
         return 0
     
-    def identify_key_scenes(self, sentences: List[str]) -> List[Dict]:
+    def identify_key_scenes(self, sentences: List[str], max_scene_duration_seconds: float = 5.0) -> List[Dict]:
         """识别需要生成图像的关键场景，支持分段处理"""
         try:
             key_scenes = []
@@ -743,7 +744,7 @@ class StoryAnalyzer:
                 
                 if current_scene is None:
                     current_scene = self._create_new_scene(i, sentence, duration, current_start_time)
-                elif current_scene["duration"] + duration <= 10:
+                elif current_scene["duration"] + duration <= max_scene_duration_seconds:
                     self._extend_current_scene(current_scene, sentence, duration)
                 else:
                     # 结束当前场景

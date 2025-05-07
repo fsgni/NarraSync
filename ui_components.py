@@ -360,6 +360,13 @@ def create_main_ui() -> Dict[str, Any]:
                         label="视频处理引擎",
                         info="选择视频生成引擎，auto会自动选择最适合的引擎"
                     )
+                    # --- Add new Slider for Max Scene Duration ---
+                    max_scene_duration_slider_component = gr.Slider( # Renamed variable to avoid conflict if already in components
+                        minimum=1.0, maximum=20.0, value=5.0, step=0.5,
+                        label="场景最大时长(秒)",
+                        info="控制单个场景的最长持续时间，值越小场景越多，节奏越快。",
+                        interactive=True
+                    )
                 with gr.Column(scale=2):
                     one_click_process_button = gr.Button("一键生成", variant="primary", size="lg")
         
@@ -382,8 +389,8 @@ def create_main_ui() -> Dict[str, Any]:
         "comfyui_style": comfyui_style,
         "image_style_type": image_style_type,
         "custom_style": custom_style,
-        "mj_concurrency_selector": mj_concurrency_selector, # Add here
-        "mj_concurrency_warning": mj_concurrency_warning, # Add here
+        "mj_concurrency_selector": mj_concurrency_selector, 
+        "mj_concurrency_warning": mj_concurrency_warning, 
         "font_name": font_name,
         "refresh_fonts_button": refresh_fonts_button,
         "font_size": font_size,
@@ -395,6 +402,7 @@ def create_main_ui() -> Dict[str, Any]:
         "voice_dropdown": voice_dropdown,
         "speed_scale_slider": speed_scale_slider_component,
         "video_engine": video_engine,
+        "max_scene_duration_slider": max_scene_duration_slider_component,
         "one_click_process_button": one_click_process_button,
         "output_text": output_text,
         "output_video": output_video
@@ -491,7 +499,8 @@ def create_main_ui() -> Dict[str, Any]:
             components["open_mouth_image"],      # 张嘴图片
             components["audio_sensitivity"],     # 音频敏感度
             # 假设有个 no_regenerate_images 的 Checkbox (如果需要从 UI 控制)
-            gr.Checkbox(value=False, visible=False) # 临时占位符
+            gr.Checkbox(value=False, visible=False), # 临时占位符
+            components["max_scene_duration_slider"] # Max Scene Duration
         ],
         outputs=[components["output_text"], components["output_video"]], 
         api_name="process_story_main"
