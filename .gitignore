@@ -70,5 +70,7 @@ api_keys.json
 config_secrets.ini
 credentials.json
 token.json
-secret_* 
+secret_*
 .env
+temp_audio_list.txt
+effectvideo/

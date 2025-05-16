@@ -148,7 +148,7 @@ def process_file(filepath, config):
         else:
             logger.info(f"配置中 FORMAT_TEXT_SHORTS 为 False 或解析失败，跳过格式化 {input_filename}。")
         # --- End Formatting --- 
-
+        
         full_process_script = Path(paths_config['FULL_PROCESS_SCRIPT'])
         python_executable = paths_config['PYTHON_EXECUTABLE']
         # processed_folder = Path(paths_config['PROCESSED_FOLDER']) # No longer needed for moving
@@ -176,13 +176,31 @@ def process_file(filepath, config):
             param_name = f"--{key.lower()}"
             val_lower = cleaned_value.lower() # Use cleaned value for checks
 
+            # Special handling for use_fade_transitions which corresponds to --no_fade_transitions flag
+            if key.upper() == 'USE_FADE_TRANSITIONS':
+                if val_lower in ['false', 'no']:
+                    command.append("--no_fade_transitions")
+                # If true or yes, do nothing, full_process.py defaults to True for use_fade_transitions
+                # If other invalid value, it will be ignored here for this specific flag.
+                continue # Move to next item
+
+            # Special handling for apply_light_effect (boolean flag)
+            if key.upper() == 'APPLY_LIGHT_EFFECT':
+                if val_lower in ['true', 'yes']:
+                    command.append("--apply_light_effect")
+                # If false or no, do nothing (flag not present means false in full_process.py)
+                continue # Move to next item
+
             # Handle boolean flags (only true/yes are added, false/no are skipped)
+            # This general handling should NOT apply to APPLY_LIGHT_EFFECT if we want it to be a store_true flag that's only added when true.
+            # The specific if block above handles APPLY_LIGHT_EFFECT.
+            # For other general boolean flags:
             if val_lower in ['true', 'yes']:
                 command.append(param_name) # Append only the flag for true booleans
             elif val_lower in ['false', 'no', '']:
                  pass # Skip false boolean flags or empty values
             else:
-                 # Treat all other non-empty values as arguments needing a value
+                 # Treat all other non-empty values as arguments needing a value (includes EFFECT_VIDEO_DIR)
                  command.append(param_name)
                  command.append(cleaned_value) # Append the cleaned value
                  
@@ -192,18 +210,31 @@ def process_file(filepath, config):
         # Use absolute path for input file to avoid issues with working directory
         process = subprocess.run(command, capture_output=True, text=True, encoding='utf-8', errors='replace', cwd=script_dir)
 
-        logger.info(f"脚本 {full_process_script.name} 对文件 {input_filename} 的处理已完成，返回码: {process.returncode}")
+        final_video_path_from_script = None
         if process.stdout:
-            logger.info(f"""脚本输出 (stdout):
-{process.stdout}""")
-        if process.stderr:
-            # Log stderr as warning or error based on return code
-            if process.returncode == 0:
-                logger.warning(f"""脚本输出 (stderr - 但返回码为0):
-{process.stderr}""")
+            for line in process.stdout.splitlines():
+                if "FINAL_VIDEO_PATH_MARKER:" in line:
+                    try:
+                        final_video_path_from_script = line.split("FINAL_VIDEO_PATH_MARKER:", 1)[1].strip()
+                        logger.info(f"从脚本输出中解析得到最终视频路径: {final_video_path_from_script}")
+                        break 
+                    except IndexError:
+                        logger.warning(f"找到 FINAL_VIDEO_PATH_MARKER 但无法解析路径: {line}")
+        
+        logger.info(f"脚本 {full_process_script.name} 对文件 {input_filename} 的处理已完成，返回码: {process.returncode}")
+        
+        # Log stdout and stderr correctly
+        if process.stdout:
+            if len(process.stdout) < 2000:
+                logger.info(f"脚本输出 (stdout):\n{process.stdout}")
             else:
-                logger.error(f"""脚本错误输出 (stderr):
-{process.stderr}""")
+                logger.info(f"脚本输出 (stdout) 存在但过长，部分省略。")
+
+        if process.stderr:
+            if process.returncode == 0:
+                logger.warning(f"脚本输出 (stderr - 但返回码为0):\n{process.stderr}")
+            else:
+                logger.error(f"脚本错误输出 (stderr):\n{process.stderr}")
 
         # Check result and move files / log processed
         if process.returncode == 0:
@@ -214,19 +245,28 @@ def process_file(filepath, config):
             logger.info(f"已将 {input_filename} 添加到处理日志。")
             # --- End Add to log ---
 
-            # Find the output video file (adjust pattern if needed)
-            expected_video_filename = f"{input_filename_stem}_final.mp4"
-            output_video_path = default_output_dir / expected_video_filename
-            
-            if output_video_path.exists():
-                target_video_path = output_video_folder / expected_video_filename
-                try:
-                    logger.info(f"移动视频文件 {output_video_path} 到 {target_video_path}")
-                    shutil.move(str(output_video_path), str(target_video_path))
-                except Exception as e:
-                     logger.error(f"移动视频文件 {output_video_path} 失败: {e}")
+            # Determine the output video file to move
+            video_to_move = None
+            if final_video_path_from_script and Path(final_video_path_from_script).exists():
+                video_to_move = Path(final_video_path_from_script)
+                logger.info(f"将移动通过标记找到的视频: {video_to_move}")
             else:
-                logger.warning(f"处理成功，但未找到预期的视频文件: {output_video_path}")
+                logger.warning(f"未从脚本输出中找到有效的最终视频路径标记。将尝试回退方案...")
+                # Fallback logic: full_process.py should now always output to {input_filename_stem}.mp4
+                potential_final_video = default_output_dir / f"{input_filename_stem}.mp4"
+                if potential_final_video.exists():
+                    video_to_move = potential_final_video
+                    logger.info(f"回退：找到最终视频 {video_to_move}")
+            
+            if video_to_move:
+                target_video_path = output_video_folder / video_to_move.name
+                try:
+                    logger.info(f"移动视频文件 {video_to_move} 到 {target_video_path}")
+                    shutil.move(str(video_to_move), str(target_video_path))
+                except Exception as e:
+                     logger.error(f"移动视频文件 {video_to_move} 失败: {e}")
+            else:
+                logger.warning(f"处理成功，但通过所有方式均未找到预期的视频文件进行移动。")
 
             # --- Remove moving the processed text file ---
             # target_text_path = processed_folder / input_file.name
@@ -274,7 +314,7 @@ class NewTextFileHandler(FileSystemEventHandler):
                  finally:
                      # Ensure the file is removed from the set even if processing fails
                      if filepath in self.processing_files:
-                        self.processing_files.remove(filepath)
+                         self.processing_files.remove(filepath)
 
 # --- Main Execution ---
 if __name__ == "__main__":

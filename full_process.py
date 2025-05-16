@@ -17,6 +17,7 @@ import logging
 import asyncio
 from test_voice_generator import process_voice_generation
 from scene_management import rewrite_prompt_with_ai
+from typing import Optional
 
 # 设置日志记录
 logging.basicConfig(
@@ -297,37 +298,23 @@ async def generate_images_concurrently(key_scenes, image_generator_type, aspect_
     logger.info(f"图像生成完成，共成功生成 {len(image_files)} 个图像")
     return processed_scenes # 返回处理后的场景列表（可能包含生成的图片路径）
 
-def process_story(input_file: str, image_generator_type: str = "comfyui", aspect_ratio: str = None, image_style: str = None, comfyui_style: str = None, font_name: str = None, font_size: int = None, font_color: str = None, bg_opacity: float = None, character_image: str = None, preserve_line_breaks: bool = False, speaker_id: int = 13, speed_scale: float = 1.0, mj_concurrency: int = 3, video_engine: str = "auto", no_regenerate_images: bool = False, tts_service: str = "voicevox", voice_preset: str = None, custom_style: str = None, talking_character: bool = False, closed_mouth_image: str = None, open_mouth_image: str = None, audio_sensitivity: float = 0.04, subtitle_vertical_offset: int = 0, max_scene_duration: float = 5.0):
-    """
-    完整的故事处理流程
-    
-    Args:
-        input_file: 输入文本文件路径
-        image_generator_type: 图像生成器类型，可选 "comfyui" 或 "midjourney"
-        aspect_ratio: 图像比例，可选值为 "16:9", "9:16" 或 None (默认方形)，仅对midjourney有效
-        image_style: 图像风格，例如: 'cinematic lighting, movie quality' 或 'ancient Chinese ink painting style'
-        comfyui_style: ComfyUI的风格选项，可选值为 "水墨", "手绘", "古风", "插画", "写实", "电影"
-        font_name: 字幕字体名称
-        font_size: 字幕字体大小
-        font_color: 字幕字体颜色 (十六进制，不含#)
-        bg_opacity: 字幕背景不透明度 (0-1)
-        character_image: 角色图片路径，如果提供则在右下角显示
-        preserve_line_breaks: 是否保留文本中的原始换行
-        speaker_id: 语音角色ID
-        speed_scale: 语速调整 (例如 0.5 到 2.0)
-        mj_concurrency: Midjourney 并发数 (默认 3)
-        video_engine: 视频处理引擎，可选 "ffmpeg", "moviepy" 或 "auto"
-        no_regenerate_images: 是否不重新生成图片，保留现有图片
-        tts_service: 文本到语音服务类型，可选 "voicevox" 或 "openai_tts"
-        voice_preset: 语音预设名称，如"storyteller", "formal", "cheerful"等，仅用于OpenAI TTS
-        custom_style: 自定义风格
-        talking_character: 是否启用会说话的角色效果
-        closed_mouth_image: 闭嘴图片路径
-        open_mouth_image: 张嘴图片路径
-        audio_sensitivity: 音频灵敏度，控制嘴巴开合的阈值
-        subtitle_vertical_offset: 字幕垂直偏移量 (负值向上，正值向下，单位像素)
-        max_scene_duration: 场景最大时长（秒），用于控制场景切分的粒度 (默认: 5.0)
-    """
+def process_story(input_file: str, image_generator_type: str = "comfyui", aspect_ratio: str = None, 
+                    image_style: str = None, comfyui_style: str = None, 
+                    font_name: str = None, font_size: int = None, font_color: str = None, 
+                    bg_opacity: float = None, character_image: str = None, 
+                    preserve_line_breaks: bool = False, speaker_id: int = 13, 
+                    speed_scale: float = 1.0, mj_concurrency: int = 3, 
+                    video_engine: str = "auto", no_regenerate_images: bool = False, 
+                    tts_service: str = "voicevox", voice_preset: str = None, 
+                    custom_style: str = None, talking_character: bool = False, 
+                    closed_mouth_image: str = None, open_mouth_image: str = None, 
+                    audio_sensitivity: float = 0.04, subtitle_vertical_offset: int = 0,
+                    max_scene_duration: float = 5.0, analysis_theme: str = "default_detailed_visual",
+                    use_fade_transitions: bool = True,
+                    apply_light_effect: bool = False, # New parameter
+                    effect_video_dir: Optional[str] = None): # New parameter
+    overall_start_time = time.time() # 总流程开始时间
+    logger.info(f"=== 开始处理故事: {Path(input_file).name} (主题: {analysis_theme}) ===")
     # 检查输入文件是否存在
     full_input_path = get_full_path(input_file, "input_texts")
     
@@ -360,8 +347,9 @@ def process_story(input_file: str, image_generator_type: str = "comfyui", aspect
         Path(dir_name).mkdir(parents=True, exist_ok=True)
     
     try:
+        step_start_time = time.time()
         # 1. 文本处理
-        print("\n1. 处理文本...")
+        logger.info("\n1. 处理文本...")
         text_processor = TextProcessor()
         
         # 尝试读取文本文件
@@ -384,10 +372,11 @@ def process_story(input_file: str, image_generator_type: str = "comfyui", aspect
         output_text_file = f"output/texts/{Path(full_input_path).name}"
         with open(output_text_file, "w", encoding="utf-8") as f:
             f.write("\n".join(sentences))
-        print(f"文本处理完成，已保存到: {output_text_file}")
+        logger.info(f"文本处理完成，已保存到: {output_text_file}，耗时: {time.time() - step_start_time:.2f} 秒")
         
+        step_start_time = time.time()
         # 2. 生成语音
-        print("\n2. 生成语音...")
+        logger.info("\n2. 生成语音...")
         audio_info_file = f"output/audio/{Path(full_input_path).stem}_audio_info.json"
         # 导入异步函数，并使用 asyncio.run 执行
         try:
@@ -406,24 +395,29 @@ def process_story(input_file: str, image_generator_type: str = "comfyui", aspect
             logger.error(error_msg)
             return error_msg # 或者抛出异常，根据错误处理策略
             
-        print(f"语音生成完成，信息已保存到: {audio_info_file}")
-        logger.info(f"语音生成完成: {len(audio_info)} 个文件，总时长 {sum(item.get('duration', 0) for item in audio_info if 'duration' in item):.2f}秒")
+        logger.info(f"语音生成完成，信息已保存到: {audio_info_file}，耗时: {time.time() - step_start_time:.2f} 秒")
+        # logger.info(f"语音生成完成: {len(audio_info)} 个文件，总时长 {sum(item.get('duration', 0) for item in audio_info if 'duration' in item):.2f}秒") # 这行可以保留或与耗时合并
         
+        step_start_time = time.time()
         # 3. 分析故事和生成场景
-        print("\n3. 分析故事和生成场景...")
+        logger.info("\n3. 分析故事和生成场景...")
         analyzer = StoryAnalyzer()
         story_analysis = analyzer.analyze_story(text, full_input_path)
-        key_scenes = analyzer.identify_key_scenes(sentences, max_scene_duration_seconds=max_scene_duration)
+        key_scenes = analyzer.identify_key_scenes(
+            sentences, 
+            max_scene_duration_seconds=max_scene_duration,
+            prompt_theme=analysis_theme
+        )
         
         # 保存场景信息
         with open("output/key_scenes.json", "w", encoding="utf-8") as f:
             json.dump(key_scenes, f, ensure_ascii=False, indent=2)
-        print("场景分析完成，信息已保存")
+        logger.info(f"场景分析完成，信息已保存，耗时: {time.time() - step_start_time:.2f} 秒")
         
+        step_start_time = time.time()
         # 4. 生成图像
-        print("\n4. 生成图像...")
-        logger.info("开始生成图像")
-        image_files = [] # 这个列表现在由并发函数内部管理并返回在processed_scenes中
+        logger.info("\n4. 生成图像...")
+        image_files = [] 
         
         # 检查是否需要跳过图像生成
         if no_regenerate_images:
@@ -471,37 +465,46 @@ def process_story(input_file: str, image_generator_type: str = "comfyui", aspect
                  logger.exception(error_msg)
                  # 根据错误处理策略决定是否继续
 
+        logger.info(f"图像生成处理完毕，耗时: {time.time() - step_start_time:.2f} 秒")
         # 确认更新后的场景信息写回文件
         with open("output/key_scenes.json", "w", encoding="utf-8") as f:
             json.dump(key_scenes, f, ensure_ascii=False, indent=2)
-        print("场景信息已更新并保存")
+        logger.info("场景信息已更新并保存")
         
+        step_start_time = time.time()
         # 5. 生成字幕
-        print("\n5. 生成字幕...")
+        logger.info("\n5. 生成SRT字幕...")
         srt_file = f"output/{Path(full_input_path).stem}.srt"
         from generate_srt import generate_srt
         generate_srt(audio_info_file, srt_file, respect_line_breaks=preserve_line_breaks)
-        print(f"字幕生成完成: {srt_file}")
+        logger.info(f"SRT字幕生成完成: {srt_file}，耗时: {time.time() - step_start_time:.2f} 秒")
         
         # 6. 创建视频
-        print("\n6. 创建视频...")
+        logger.info("\n6. 创建视频...")
+        base_video_start_time = time.time()
         base_video = "output/base_video.mp4"
-        final_video = "output/final_video.mp4"
+        final_video_temp_product = "output/final_video_temp.mp4" # 使用临时名称以防覆盖
         
         # 使用新的VideoProcessor统一处理
-        video_processor = VideoProcessor(engine=video_engine)
+        video_processor = VideoProcessor(engine=video_engine, effect_video_dir=effect_video_dir)
         print(f"使用 {video_processor.engine.upper()} 引擎处理视频")
         
         # 创建基础视频
         video_processor.create_base_video(audio_info_file, base_video)
+        logger.info(f"基础视频创建完成，耗时: {time.time() - base_video_start_time:.2f} 秒")
         
+        scene_video_start_time = time.time()
         # 创建场景视频
-        video_processor.create_video_with_scenes("output/key_scenes.json", base_video, final_video)
+        video_processor.create_video_with_scenes("output/key_scenes.json", base_video, final_video_temp_product, use_fade_transitions=use_fade_transitions)
+        logger.info(f"场景视频创建完成，耗时: {time.time() - scene_video_start_time:.2f} 秒")
+        
+        current_video_for_processing = final_video_temp_product # 当前待处理的视频文件
         
         # 如果提供了角色图片，添加角色图片
         if character_image and character_image != "不使用角色图片" and character_image != "没有找到图片文件。请在input_images目录添加图片。":
-            print("\n6.1 添加角色图片...")
-            print(f"角色图片路径: {character_image}")
+            char_img_start_time = time.time()
+            logger.info("\n6.1 添加角色图片...")
+            logger.info(f"角色图片路径: {character_image}")
             
             # 将角色图片转换为完整路径
             character_image_path = get_full_path(character_image, "input_images")
@@ -524,9 +527,6 @@ def process_story(input_file: str, image_generator_type: str = "comfyui", aspect
                     character_image_path = None
             
             if character_image_path:
-                # 创建临时视频文件
-                temp_video_with_character = "output/temp_video_with_character.mp4"
-                
                 # 判断是否使用会说话的角色
                 if talking_character and closed_mouth_image and open_mouth_image and closed_mouth_image != "不使用角色图片" and open_mouth_image != "不使用角色图片":
                     try:
@@ -541,54 +541,54 @@ def process_story(input_file: str, image_generator_type: str = "comfyui", aspect
                             print(f"警告: 闭嘴或张嘴图片不存在，将使用普通角色图片")
                             # 使用普通角色图片模式
                             from add_character_image import add_character_image_to_video
-                            success = add_character_image_to_video(final_video, character_image_path, temp_video_with_character)
+                            success = add_character_image_to_video(final_video_temp_product, character_image_path, current_video_for_processing)
                         else:
                             # 导入会说话角色模块
                             from add_talking_character import create_talking_character_video
                             
                             # 添加会说话的角色
                             success = create_talking_character_video(
-                                final_video, 
+                                final_video_temp_product, 
                                 closed_mouth_path, 
                                 open_mouth_path, 
-                                temp_video_with_character,
+                                current_video_for_processing,
                                 threshold=audio_sensitivity
                             )
                         
                         if success:
                             print(f"成功添加会说话的角色图片到视频")
                             # 使用带有角色图片的视频作为最终视频
-                            final_video = temp_video_with_character
+                            current_video_for_processing = final_video_temp_product
                         else:
-                            print(f"添加会说话的角色图片失败，将使用原始视频继续处理")
+                            print(f"添加会说话的角色图片失败，将使用上一阶段视频继续处理")
                     except Exception as e:
                         print(f"添加会说话的角色过程中出错: {e}")
                         import traceback
                         traceback.print_exc()
-                        print("将使用原始视频继续处理")
+                        logger.warning("添加角色图片过程中出错，将使用上一阶段视频继续处理") # 更明确的日志
                 else:
                     try:
                         # 使用普通角色图片
                         from add_character_image import add_character_image_to_video
-                        success = add_character_image_to_video(final_video, character_image_path, temp_video_with_character)
+                        success = add_character_image_to_video(final_video_temp_product, character_image_path, current_video_for_processing)
                         if success:
                             print(f"成功添加角色图片到视频")
-                            final_video = temp_video_with_character
+                            current_video_for_processing = final_video_temp_product
                         else:
-                            print(f"添加角色图片失败，将使用原始视频继续处理")
+                            print(f"添加角色图片失败，将使用上一阶段视频继续处理")
                     except Exception as e:
                         print(f"添加角色图片过程中出错: {e}")
                         import traceback
                         traceback.print_exc()
-                        print("将使用原始视频继续处理")
+                        logger.warning("添加角色图片过程中出错，将使用上一阶段视频继续处理") # 更明确的日志
+                if character_image_path: # 只有在尝试了添加图片后才记录时间
+                    logger.info(f"角色图片处理完成，耗时: {time.time() - char_img_start_time:.2f} 秒")
         
-        print("视频创建完成")
+        # 7. 添加字幕到最终视频
+        logger.info("\n7. 添加最终字幕到视频...")
+        final_subtitled_video_path = f"output/{Path(full_input_path).stem}.mp4"
+        sub_add_start_time = time.time()
         
-        # 7. 添加字幕
-        print("\n7. 添加字幕...")
-        output_video = f"output/{Path(full_input_path).stem}_final.mp4"
-        
-        # 使用传入的字幕设置参数
         subtitle_params = {}
         if font_name:
             subtitle_params["font_name"] = font_name
@@ -602,16 +602,72 @@ def process_story(input_file: str, image_generator_type: str = "comfyui", aspect
             subtitle_params["subtitle_vertical_offset"] = subtitle_vertical_offset
         
         from add_subtitles import add_subtitles
-        add_subtitles(final_video, srt_file, output_video, **subtitle_params)
-        print(f"最终视频已生成: {output_video}")
+        add_subtitles(current_video_for_processing, srt_file, final_subtitled_video_path, **subtitle_params)
+        logger.info(f"带字幕视频已生成: {final_subtitled_video_path}，添加字幕耗时: {time.time() - sub_add_start_time:.2f} 秒")
         
-        print("\n=== 处理完成 ===")
-        return output_video
+        # 8. (新步骤) 应用视频特效叠加
+        video_to_return = final_subtitled_video_path # Default to subtitled video
+
+        if apply_light_effect:
+            effect_step_start_time = time.time()
+            logger.info("\n8. 应用灯光特效叠加...")
+            
+            # Define a temporary path for the effect output
+            temp_effect_output_video_path = f"output/{Path(full_input_path).stem}_effect_temp.mp4"
+            
+            try:
+                # Attempt to apply effect to the subtitled video, outputting to temp path
+                effect_result_path = video_processor.apply_effect_overlay(
+                    final_subtitled_video_path,    # Input is the subtitled video (e.g., name.mp4)
+                    temp_effect_output_video_path  # Output is a temporary file
+                )
+                
+                # Check if the effect was successfully applied (i.e., output path is the temp path)
+                if Path(effect_result_path).resolve() == Path(temp_effect_output_video_path).resolve() and Path(temp_effect_output_video_path).exists() and Path(temp_effect_output_video_path).stat().st_size > 0:
+                    logger.info(f"灯光特效叠加到临时文件成功: {temp_effect_output_video_path}")
+                    # Move/rename the successfully effected video to the final desired path, overwriting the original subtitled-only video.
+                    try:
+                        shutil.move(str(temp_effect_output_video_path), str(final_subtitled_video_path))
+                        video_to_return = final_subtitled_video_path # Update the path to return
+                        logger.info(f"已将特效视频重命名为最终路径: {video_to_return}")
+                    except Exception as move_err:
+                        logger.error(f"重命名特效视频 {temp_effect_output_video_path} 到 {final_subtitled_video_path} 失败: {move_err}. 保留临时特效文件。")
+                        video_to_return = temp_effect_output_video_path # Return temp if move fails but effect was good
+                else:
+                    logger.warning(f"灯光特效未应用或失败。apply_effect_overlay 返回: {effect_result_path}. 使用原始带字幕视频。")
+                    # Ensure temp file is cleaned up if it exists and is possibly bad/empty
+                    if Path(temp_effect_output_video_path).exists():
+                        try:
+                            os.remove(temp_effect_output_video_path)
+                            logger.info(f"已清理空的/损坏的临时特效文件: {temp_effect_output_video_path}")
+                        except OSError as e_remove:
+                            logger.warning(f"无法清理临时特效文件 {temp_effect_output_video_path}: {e_remove}")
+                logger.info(f"特效处理耗时: {time.time() - effect_step_start_time:.2f} 秒")
+
+            except Exception as e_effect:
+                logger.error(f"应用灯光特效过程中发生严重错误: {e_effect}")
+                logger.warning(f"将使用原始带字幕视频。")
+                # Cleanup temp file if it exists
+                if Path(temp_effect_output_video_path).exists():
+                    try:
+                        os.remove(temp_effect_output_video_path)
+                    except OSError:
+                        pass # Ignore if removal fails
+        
+        overall_end_time = time.time()
+        total_duration_seconds = overall_end_time - overall_start_time
+        td_str = time.strftime("%H:%M:%S", time.gmtime(total_duration_seconds))
+        logger.info(f"=== 文件 {Path(input_file).name} 全部处理完成，总耗时: {td_str} (约 {total_duration_seconds:.2f} 秒) ===")
+        
+        logger.info(f"FINAL_VIDEO_PATH_MARKER: {video_to_return}") 
+        return video_to_return
         
     except Exception as e:
-        print(f"处理过程中发生错误: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.exception(f"处理文件 {Path(input_file).name} 过程中发生主流程错误: {e}")
+        overall_end_time = time.time()
+        total_duration_seconds = overall_end_time - overall_start_time
+        td_str = time.strftime("%H:%M:%S", time.gmtime(total_duration_seconds))
+        logger.error(f"文件 {Path(input_file).name} 处理失败，已用时: {td_str} (约 {total_duration_seconds:.2f} 秒)")
         return None
 
 if __name__ == "__main__":
@@ -666,6 +722,18 @@ if __name__ == "__main__":
         default=5.0, 
         help="场景最大时长（秒），用于控制场景切分的粒度 (默认: 5.0)"
     )
+    parser.add_argument(
+        "--analysis_theme",
+        default="default_detailed_visual",  # 设置一个默认主题
+        help="故事分析和场景生成时使用的主题 (例如: default_detailed_visual, news_report_style)"
+    )
+    # 新增: 控制MoviePy淡入淡出效果的开关
+    parser.add_argument("--no_fade_transitions", action="store_false", dest="use_fade_transitions", default=True, help="如果设置，禁用MoviePy场景切换时的淡入淡出效果")
+    
+    # 新增: 控制视频特效叠加的参数
+    parser.add_argument("--apply_light_effect", action="store_true", help="如果设置，在最终视频上叠加灯光特效")
+    parser.add_argument("--effect_video_dir", type=str, default=None, help="特效视频素材所在的目录路径")
+
     args = parser.parse_args()
 
     # 打印参数信息，便于调试
@@ -693,6 +761,9 @@ if __name__ == "__main__":
     print(f"  音频灵敏度: {args.audio_sensitivity}")
     print(f"  字幕垂直偏移量: {args.subtitle_vertical_offset}")
     print(f"  场景最大时长: {args.max_scene_duration}")
+    print(f"  MoviePy淡入淡出: {args.use_fade_transitions}")
+    print(f"  应用灯光特效: {args.apply_light_effect}")
+    print(f"  特效视频目录: {args.effect_video_dir}")
 
     # 设置图像生成器 (优先使用--image_generator)
     image_generator = args.image_generator
@@ -749,7 +820,11 @@ if __name__ == "__main__":
         args.open_mouth_image,
         args.audio_sensitivity,
         args.subtitle_vertical_offset,
-        args.max_scene_duration
+        args.max_scene_duration,
+        args.analysis_theme,
+        args.use_fade_transitions,
+        args.apply_light_effect,
+        args.effect_video_dir
     ) 
     
     if result is None or isinstance(result, str) and result.startswith("错误:"):

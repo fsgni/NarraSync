@@ -6,10 +6,6 @@ import json
 from pathlib import Path
 import re
 import sys
-import time
-import random
-import string
-import locale
 
 # 设置系统编码为UTF-8，解决Windows命令行的编码问题
 if sys.stdout.encoding != 'utf-8':
@@ -34,12 +30,12 @@ class StoryAnalyzer:
             # api_key = None 
         
         try:
-             self.client = OpenAI(api_key=api_key)
+            self.client = OpenAI(api_key=api_key)
         except Exception as e:
-             print(f"初始化 OpenAI 客户端失败: {e}。请检查 API 密钥是否正确设置。")
-             # Handle the error appropriately, maybe raise it or set client to None
-             self.client = None # Set client to None if init fails
-             # raise e # Or re-raise the exception
+            print(f"初始化 OpenAI 客户端失败: {e}。请检查 API 密钥是否正确设置。")
+            # Handle the error appropriately, maybe raise it or set client to None
+            self.client = None # Set client to None if init fails
+            # raise e # Or re-raise the exception
 
         self.model = "gpt-4o-mini" # 必须使用 gpt-4o-mini 模型 不得擅自修改
         self.core_elements = {}
@@ -55,6 +51,26 @@ class StoryAnalyzer:
         self._api_cache = {}
         self._analysis_cache = {}
     
+        self.prompt_templates = self._load_prompt_templates() # Added
+    
+    def _load_prompt_templates(self, file_path: str = "prompt_templates.json") -> Dict:
+        """加载提示词模板文件"""
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                templates = json.load(f)
+            print(f"成功加载提示词模板: {file_path}")
+            return templates
+        except FileNotFoundError:
+            print(f"错误: 提示词模板文件未找到: {file_path}")
+            # Return empty dict or raise error, depending on desired behavior
+            return {"scene_description_prompts": {}, "sensitivity_rewrite_system_messages": {}}
+        except json.JSONDecodeError:
+            print(f"错误: 解析提示词模板文件失败: {file_path}")
+            return {"scene_description_prompts": {}, "sensitivity_rewrite_system_messages": {}}
+        except Exception as e:
+            print(f"加载提示词模板时发生未知错误: {e}")
+            return {"scene_description_prompts": {}, "sensitivity_rewrite_system_messages": {}}
+
     def _generate_cache_key(self, text: str, is_segment: bool) -> str:
         """生成缓存键"""
         # 使用文本的哈希值和segment标志生成缓存键
@@ -143,14 +159,13 @@ class StoryAnalyzer:
         analysis_prompt = """
         You are tasked with analyzing a story and extracting key elements.
         Analyze the following story and extract these elements in valid JSON format.
-        IMPORTANT: All values in the JSON output (e.g., culture, location, era, style, appearance, role) MUST be in ENGLISH. If the original story text is in another language, translate these extracted elements into English.
-
+        IMPORTANT: All values in the JSON output (e.g., culture, location, era, appearance, role) MUST be in ENGLISH. If the original story text is in another language, translate these extracted elements into English.
+        
         {
             "setting": {
                 "culture": "the specific cultural background (in English)",
                 "location": "the specific location (in English)",
                 "era": "the specific time period or era (in English)",
-                "style": "the overall visual style that would suit this story (in English, e.g., 'Impressionistic', 'Cyberpunk', 'Realistic oil painting')"
             },
             "characters": {
                 "character_name_in_english_or_transliterated": { 
@@ -179,7 +194,6 @@ class StoryAnalyzer:
                 "culture": "Universal",
                 "location": "Story World",
                 "era": "Story Time",
-                "style": "Realistic"
             },
             "characters": {}
         }
@@ -273,24 +287,20 @@ class StoryAnalyzer:
         culture_counts = {}
         location_counts = {}
         era_counts = {}
-        style_counts = {}
         
         for setting in segment_settings:
             culture = setting.get("culture", "Universal")
             location = setting.get("location", "Story World")
             era = setting.get("era", "Story Time")
-            style = setting.get("style", "Realistic")
             
             culture_counts[culture] = culture_counts.get(culture, 0) + 1
             location_counts[location] = location_counts.get(location, 0) + 1
             era_counts[era] = era_counts.get(era, 0) + 1
-            style_counts[style] = style_counts.get(style, 0) + 1
         
         # 选择出现频率最高的值
         culture = max(culture_counts.items(), key=lambda x: x[1])[0] if culture_counts else "Universal"
         location = max(location_counts.items(), key=lambda x: x[1])[0] if location_counts else "Story World"
         era = max(era_counts.items(), key=lambda x: x[1])[0] if era_counts else "Story Time"
-        style = max(style_counts.items(), key=lambda x: x[1])[0] if style_counts else "Realistic"
         
         # 创建整合的分析结果
         consolidated_result = {
@@ -298,7 +308,6 @@ class StoryAnalyzer:
                 "culture": culture,
                 "location": location,
                 "era": era,
-                "style": style
             },
             "characters": all_characters,
             "cultural_elements": {},
@@ -312,7 +321,7 @@ class StoryAnalyzer:
         # 设置核心元素
         self._set_core_elements(consolidated_result)
         
-        print(f"整合分析结果 - 文化: {culture}, 地点: {location}, 时代: {era}, 风格: {style}")
+        print(f"整合分析结果 - 文化: {culture}, 地点: {location}, 时代: {era}")
         print(f"识别到的角色数量: {len(all_characters)}")
         
         return consolidated_result
@@ -323,7 +332,6 @@ class StoryAnalyzer:
             "setting": {
                 "culture": analysis_result.get("setting", {}).get("culture", "Universal"),
                 "era": analysis_result.get("setting", {}).get("era", "Story Time"),
-                "style": analysis_result.get("setting", {}).get("style", "Realistic")
             },
             "characters": analysis_result.get("characters", {}),
             "cultural_elements": analysis_result.get("cultural_elements", {}),
@@ -409,39 +417,37 @@ class StoryAnalyzer:
                 "character_info": character_info
             }
             
-    def _generate_scene_description(self, culture: str, location: str, era: str, style: str, context: str, character_info: str) -> str:
+    def _generate_scene_description(self, culture: str, location: str, era: str, style: str, context: str, character_info: str, prompt_theme: str = "default_detailed_visual") -> str:
         """生成场景描述，用于减少代码重复"""
-        prompt = f"""
-        Create a DETAILED visual scene description based on this text:
         
-        "{context}"
-        
-        Your description should reflect:
-        - Culture: {culture}
-        - Location: {location}
-        - Time period: {era}
-        - Visual style: {style}
-        
-        Character information to include (DO NOT use character names, only describe their roles and appearances):
-        {character_info}
-        
-        FOCUS ON THESE ELEMENTS BASED ON THE CONTEXT:
-        1. GRAND SCENES - For large-scale events, battles, or crowd scenes, focus on the overall atmosphere, scale, and environment (e.g., "vast battlefield with thousands of soldiers", "crowded marketplace bustling with activity")
-        2. LANDSCAPE & ENVIRONMENT - Describe natural or architectural elements that define the scene (e.g., "towering castle against stormy sky", "sunlight filtering through ancient forest")
-        3. ATMOSPHERIC ELEMENTS - Include lighting, weather, time of day that create mood (e.g., "golden sunset casting long shadows", "misty morning shrouding the mountains")
-        4. SPECIFIC CHARACTER EXPRESSIONS - When focusing on individuals, include detailed facial expressions (e.g., "determined gaze", "furrowed brow")
-        5. PRECISE BODY LANGUAGE - For character-focused scenes, describe exact poses and gestures (e.g., "hand firmly gripping sword")
-        6. DYNAMIC ACTIONS - Show movement and energy appropriate to the scene (e.g., "armies clashing on blood-soaked field", "dancers twirling across marble floor")
-        
-        Format as: "[Setting/Environment], [Scale and Atmosphere], [Character elements or crowd dynamics if relevant]"
-        
-        Use 40-50 words maximum. Focus on visually striking and emotionally resonant elements.
-        Your response must be in English only.
-        IMPORTANT: DO NOT include any character names in your description.
-        """
+        prompt_template = self.prompt_templates.get("scene_description_prompts", {}).get(prompt_theme)
+        if not prompt_template:
+            print(f"警告: 未找到场景描述主题 '{prompt_theme}'。将使用默认回退。")
+            # Fallback to a very basic prompt if even default_detailed_visual is missing or templates not loaded
+            prompt_template = "Describe a scene with {culture} culture, in {location} during {era}. Context: {context}. Characters: {character_info}"
+            if prompt_theme != "default_detailed_visual" and self.prompt_templates.get("scene_description_prompts", {}).get("default_detailed_visual"):
+                 prompt_template = self.prompt_templates["scene_description_prompts"]["default_detailed_visual"] # Try default if specific theme fails
+                 print("已回退到 'default_detailed_visual' 主题。")
+
+        # For news_report_style, we might need to prepare summaries.
+        # For now, we'll pass the full context and character_info.
+        # Future enhancement: create character_info_summary and context_summary if theme is news_report_style.
+        character_info_summary = character_info # Placeholder
+        context_summary = context # Placeholder
+
+        prompt = prompt_template.format(
+            culture=culture,
+            location=location,
+            era=era,
+            style=style, # Style might not be in all templates, but .format ignores extra keys
+            context=context,
+            character_info=character_info,
+            character_info_summary=character_info_summary, # For news style
+            context_summary=context_summary # For news style
+        )
         
         # 缓存键，避免重复API调用
-        cache_key = f"scene_{hash(prompt)}"
+        cache_key = f"scene_{prompt_theme}_{hash(prompt)}" # Include theme in cache key
         if hasattr(self, '_scene_cache') and cache_key in self._scene_cache:
             return self._scene_cache[cache_key]
             
@@ -449,11 +455,11 @@ class StoryAnalyzer:
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": "You are a scene description generator that balances grand scenes with character details. Adapt your focus based on the context - for battles, crowds, or landscapes, emphasize the environment and scale; for intimate moments, focus on character details. Always respond in English only."},
+                    {"role": "system", "content": "You are a scene description generator. Adapt your focus based on the context. Always respond in English only."}, # Simplified system message as specifics are in the prompt
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.7,
-                max_tokens=100
+                max_tokens=150 # Increased slightly for potentially more complex themed prompts
             )
             
             scene = response.choices[0].message.content.strip()
@@ -467,7 +473,7 @@ class StoryAnalyzer:
             
             return scene
         except Exception as e:
-            print(f"生成场景描述时出错: {e}")
+            print(f"生成场景描述时出错 (主题: {prompt_theme}): {e}")
             # 返回简单的场景描述
             return f"{location} during {era}, {culture} style"
             
@@ -515,7 +521,7 @@ class StoryAnalyzer:
         
         return scene
         
-    def generate_scene_prompt(self, sentences: List[str]) -> str:
+    def generate_scene_prompt(self, sentences: List[str], prompt_theme: str = "default_detailed_visual") -> str:
         """生成场景提示词，使用统一的时代背景和风格，确保所有提示词都是英语，并且简洁有效"""
         if not self.story_era or not hasattr(self, 'core_elements'):
             print("警告：需要先分析故事背景")
@@ -574,7 +580,10 @@ class StoryAnalyzer:
             # 生成场景描述 (现在传入的 context 应该是原始的，但 character_info 已经是英文)
             # _generate_scene_description 的 prompt 也需要确保它知道 context 可能不是英文
             # 或者，我们假设 context (sentences) 也会被翻译，但这不在此次修改范围，目前 context 主要用于 GPT 理解场景内容
-            scene = self._generate_scene_description(culture, location, era, style, context, character_info)
+            scene = self._generate_scene_description(
+                culture, location, era, style, context, character_info,
+                prompt_theme=prompt_theme # Pass theme
+            )
             
             # 清理场景描述
             cleaned_scene = self._clean_scene_description(scene)
@@ -600,11 +609,11 @@ class StoryAnalyzer:
             # 返回一个简洁的通用场景描述
             return f"{culture}, {location}, {era}, {style} style, high quality"
     
-    def generate_segment_specific_prompt(self, sentences: List[str], segment_index: int = None) -> str:
+    def generate_segment_specific_prompt(self, sentences: List[str], segment_index: int = None, prompt_theme: str = "default_detailed_visual") -> str:
         """生成基于特定段落分析的场景提示词，为长文本故事的不同段落提供更准确、简洁的场景描述"""
         if not self.segment_analyses:
             # 如果没有分段分析结果，回退到标准方法
-            return self.generate_scene_prompt(sentences)
+            return self.generate_scene_prompt(sentences, prompt_theme=prompt_theme)
         
         # 尝试确定句子属于哪个段落
         if segment_index is None:
@@ -612,7 +621,7 @@ class StoryAnalyzer:
         
         # 如果无法确定或超出范围，使用整合的结果
         if segment_index is None or segment_index >= len(self.segment_analyses):
-            return self.generate_scene_prompt(sentences)
+            return self.generate_scene_prompt(sentences, prompt_theme=prompt_theme)
         
         # 使用特定段落的分析结果，但文化背景使用全局信息
         segment_analysis = self.segment_analyses[segment_index]
@@ -661,25 +670,15 @@ class StoryAnalyzer:
         character_info = "; ".join(character_descriptions)
         
         try:
-            # --- REMOVE TRANSLATION STEP for segment specific prompt ---
-            # translated_data = self._translate_scene_data(culture, location, era, style, context, character_info)
-            # culture = translated_data.get("culture", culture)
-            # location = translated_data.get("location", location)
-            # era = translated_data.get("era", era)
-            # style = translated_data.get("style", style)
-            # context = translated_data.get("context", context)
-            # character_info = translated_data.get("character_info", character_info)
-            # print(f"段落 {segment_index+1} 翻译后的背景信息 - 文化: {culture}, 地点: {location}, 时代: {era}, 风格: {style}")
-            # if character_info:
-            #     print(f"翻译后的角色信息: {character_info}")
-            # --- END REMOVE TRANSLATION STEP --- 
-
             print(f"段落 {segment_index+1} 用于生成场景描述的背景信息 - 文化: {culture}, 地点: {location}, 时代: {era}, 风格: {style}")
             if character_info:
                 print(f"段落 {segment_index+1} 用于生成场景描述的角色信息: {character_info}")
-
+            
             # 生成场景描述
-            scene = self._generate_scene_description(culture, location, era, style, context, character_info)
+            scene = self._generate_scene_description(
+                culture, location, era, style, context, character_info,
+                prompt_theme=prompt_theme # Pass theme
+            )
             
             # 清理场景描述
             cleaned_scene = self._clean_scene_description(scene)
@@ -713,7 +712,7 @@ class StoryAnalyzer:
         # 在实际应用中，可以实现更复杂的匹配逻辑
         return 0
     
-    def identify_key_scenes(self, sentences: List[str], max_scene_duration_seconds: float = 5.0) -> List[Dict]:
+    def identify_key_scenes(self, sentences: List[str], max_scene_duration_seconds: float = 5.0, prompt_theme: str = "default_detailed_visual") -> List[Dict]:
         """识别需要生成图像的关键场景，支持分段处理"""
         try:
             key_scenes = []
@@ -748,7 +747,7 @@ class StoryAnalyzer:
                     self._extend_current_scene(current_scene, sentence, duration)
                 else:
                     # 结束当前场景
-                    self._finalize_scene(current_scene, i - 1, current_segment if use_segments else None)
+                    self._finalize_scene(current_scene, i - 1, current_segment if use_segments else None, prompt_theme=prompt_theme) # Pass theme
                     key_scenes.append(current_scene)
                     
                     # 开始新场景
@@ -757,7 +756,7 @@ class StoryAnalyzer:
             
             # 处理最后一个场景
             if current_scene:
-                self._finalize_scene(current_scene, len(sentences) - 1, current_segment if use_segments else None)
+                self._finalize_scene(current_scene, len(sentences) - 1, current_segment if use_segments else None, prompt_theme=prompt_theme) # Pass theme
                 key_scenes.append(current_scene)
             
             return key_scenes
@@ -784,15 +783,15 @@ class StoryAnalyzer:
         scene["duration"] += duration
         scene["end_time"] = scene["start_time"] + scene["duration"]
     
-    def _finalize_scene(self, scene: Dict, end_index: int, segment_index: int = None):
+    def _finalize_scene(self, scene: Dict, end_index: int, segment_index: int = None, prompt_theme: str = "default_detailed_visual"):
         """完成场景处理，可选择基于段落生成提示词"""
         scene["end_index"] = end_index
         
         # 如果有段落索引，使用段落特定的提示词生成
         if segment_index is not None:
-            scene["prompt"] = self.generate_segment_specific_prompt(scene["sentences"], segment_index)
+            scene["prompt"] = self.generate_segment_specific_prompt(scene["sentences"], segment_index, prompt_theme=prompt_theme) # Pass theme
         else:
-            scene["prompt"] = self.generate_scene_prompt(scene["sentences"])
+            scene["prompt"] = self.generate_scene_prompt(scene["sentences"], prompt_theme=prompt_theme) # Pass theme
     
     def get_sentence_duration(self, sentence: str) -> float:
         """获取句子的音频时长，优化文件读取和错误处理"""
@@ -924,19 +923,20 @@ class StoryAnalyzer:
         return prompt
 
     # 新增方法：使用 LLM 重写提示词以避免敏感内容
-    def rewrite_prompt_for_sensitivity(self, original_prompt: str, retry_count: int = 0) -> str:
+    def rewrite_prompt_for_sensitivity(self, original_prompt: str, retry_count: int = 0, system_message_theme: str = "default") -> str:
         """使用配置的 LLM (gpt-4o-mini) 重写提示词，旨在移除敏感内容。"""
         print(f"尝试使用 GPT-4o mini 重写提示词 (重试次数: {retry_count})，原始提示词: {original_prompt[:100]}...")
 
-        system_message = """
-        You are an AI image prompt optimization expert. Your task is to rewrite potentially sensitive prompts to ensure they pass content moderation filters while preserving the original artistic intent as much as possible.
-        Rules:
-        1. Remove or replace words related to violence, gore, nudity, or other potentially NSFW content.
-        2. Maintain the core subject, setting, and style of the original prompt.
-        3. Use more implicit or euphemistic language if necessary.
-        4. If the original prompt seems safe, slightly rephrase it to be absolutely sure.
-        5. Respond ONLY with the rewritten prompt, without any explanation, preamble, or quotation marks.
-        """
+        system_message_template = self.prompt_templates.get("sensitivity_rewrite_system_messages", {}).get(system_message_theme)
+        if not system_message_template:
+            print(f"警告: 未找到敏感内容重写主题 '{system_message_theme}'。将使用默认回退。")
+            # Fallback if the specific theme is missing or templates not loaded
+            system_message_template = "You are an AI assistant. Rewrite the prompt to be safe."
+            if system_message_theme != "default" and self.prompt_templates.get("sensitivity_rewrite_system_messages", {}).get("default"):
+                system_message_template = self.prompt_templates["sensitivity_rewrite_system_messages"]["default"]
+                print("已回退到 'default' 敏感内容重写主题。")
+        
+        system_message = system_message_template # In this case, the template is the message itself
         
         user_message = f"""
         Rewrite the following image prompt to avoid sensitive content while keeping the original meaning. This is retry number {retry_count + 1} because the previous prompt failed generation.
@@ -945,7 +945,7 @@ class StoryAnalyzer:
         """ # Added "Rewritten Prompt:" to guide the model better
 
         # 缓存键，避免对完全相同的重写请求重复调用 API
-        cache_key = f"rewrite_{hash(original_prompt)}_{retry_count}"
+        cache_key = f"rewrite_{system_message_theme}_{hash(original_prompt)}_{retry_count}" # Include theme in cache key
         if hasattr(self, '_rewrite_cache') and cache_key in self._rewrite_cache:
             print("使用缓存的重写提示词")
             return self._rewrite_cache[cache_key]

@@ -467,14 +467,14 @@ def format_text_for_shorts_gpt(raw_text: str) -> str:
     # --- 构建 Prompt ---
     # 指示模型进行分行，每行尽量控制在7个字符左右，适应短视频竖屏显示
     # 强调保持自然和易读性，避免生硬截断
-    prompt = f"""
-请将以下日文文本重新分行，以适应短视频（竖屏）的字幕显示。
+    prompt = f"""请将以下日文文本重新分行，以适应短视频（竖屏）的字幕显示。目标是创建易于快速阅读且自然的字幕。
 
 格式要求：
-1.  每行尽量控制在 **7 个字符以内**。
-2.  断句和换行应尽可能**自然、符合语义**，便于阅读。
-3.  保持原文的**意思和风格**不变。
-4.  最终输出**只需要格式化后的文本**，不要包含任何解释或其他多余内容。
+1.  **语义完整性优先**：断句的首要原则是保持语义单元的完整性。**不要将一个完整的日语单词（例如，名词、动词、形容词、副词或固定短语）从中间拆分到两行。**
+2.  **自然断点**：请在自然的停顿处（如助词后、逗号后、或语义清晰的短语结束后）进行换行。优先考虑符合日语阅读习惯的断点。
+3.  **行长度**：在满足上述语义和自然断点的前提下，每行尽量控制在 **1-8 个字符左右**。
+4.  **保持原文**：保持原文的**意思和风格**不变。
+5.  **纯文本输出**：最终输出**只需要格式化后的文本**，不要包含任何解释、序号或其他多余内容。
 
 原始文本：
 「{raw_text}」
@@ -502,10 +502,10 @@ def format_text_for_shorts_gpt(raw_text: str) -> str:
         response = client.chat.completions.create(
             model="gpt-4o-mini", # Use gpt-4o-mini model
             messages=[
-                {"role": "system", "content": "你是一个文本格式化助手，专门为短视频优化字幕分行。"},
+                {"role": "system", "content": "你是一个文本格式化助手，专门为短视频优化日语字幕分行，严格遵守用户提供的格式要求，特别是语义完整性和自然断点规则。"},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.5, # Adjust temperature if needed
+            temperature=0.2, # Lower temperature for more deterministic output
             max_tokens=1024 # Adjust max tokens if needed
         )
         

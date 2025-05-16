@@ -161,7 +161,7 @@ def build_command(input_file: str, config: VideoProcessingConfig, subtitle_verti
     if max_scene_duration_from_ui is not None: # Check if it was provided
         cmd.extend(["--max_scene_duration", str(max_scene_duration_from_ui)])
         print(f"添加场景最大时长参数: --max_scene_duration {max_scene_duration_from_ui}")
-
+    
     # 打印完整命令
     print("\n执行命令:", " ".join(cmd))
     return cmd
@@ -334,15 +334,15 @@ def run_process(cmd: List[str]) -> Generator[Tuple[str, Optional[str]], None, No
     return_code = -1
     process = None # Initialize process to None
     try:
-        process = subprocess.Popen(
-            cmd, 
-            stdout=subprocess.PIPE, 
-            stderr=subprocess.STDOUT,
-            text=True,
-                encoding='utf-8',
-                errors='replace', 
-                creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
-        )
+    process = subprocess.Popen(
+        cmd, 
+        stdout=subprocess.PIPE, 
+        stderr=subprocess.STDOUT,
+        text=True,
+            encoding='utf-8',
+            errors='replace', 
+            creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
+    )
     
         if process.stdout:
             for line in iter(process.stdout.readline, ''):
@@ -382,11 +382,11 @@ def find_latest_video() -> Optional[str]:
 
 def process_story(
     text_input: str, selected_file: str, image_generator_type: str, aspect_ratio: str, 
-    image_style_type: str, custom_style: Optional[str] = None, comfyui_style: Optional[str] = None, 
-    font_name: Optional[str] = None, font_size: Optional[int] = None, 
-    font_color: Optional[str] = None, bg_opacity: Optional[float] = None, 
-    subtitle_vertical_offset: int = 0,
-    character_image: Optional[str] = None, preserve_line_breaks: bool = False, 
+                  image_style_type: str, custom_style: Optional[str] = None, comfyui_style: Optional[str] = None, 
+                  font_name: Optional[str] = None, font_size: Optional[int] = None, 
+                  font_color: Optional[str] = None, bg_opacity: Optional[float] = None, 
+    subtitle_vertical_offset: int = 0, 
+                  character_image: Optional[str] = None, preserve_line_breaks: bool = False, 
     voice_dropdown: str = DEFAULT_VOICE, 
     speed_scale: float = 1.0, 
     video_engine: str = "auto", 
@@ -394,7 +394,7 @@ def process_story(
     talking_character: bool = False, 
     closed_mouth_image: Optional[str] = None, 
     open_mouth_image: Optional[str] = None, 
-    audio_sensitivity: float = DEFAULT_AUDIO_SENSITIVITY,
+    audio_sensitivity: float = DEFAULT_AUDIO_SENSITIVITY, 
     max_scene_duration_from_ui: float = 5.0 
 ) -> Generator[Union[Tuple[str, Optional[str], str]], None, None]:
     """处理故事文本并生成视频，捕获日志信息
@@ -424,7 +424,7 @@ def process_story(
     print(f"DEBUG video_processing.py: process_story received max_scene_duration_from_ui = {max_scene_duration_from_ui}")
     logger.info(f"DEBUG: process_story received max_scene_duration_from_ui = {max_scene_duration_from_ui}") # Also log it
     # --- END DEBUG PRINT ---
-
+    
     # The main try block for the entire process
     try:
         logger.info("开始处理故事...")

@@ -257,7 +257,7 @@ def recompose_video_only(video_engine, character_image=None, font_name=None, fon
                 try:
                     os.remove("output/temp_video_with_character.mp4")
                     print("旧的会说话角色视频已删除")
-                except Exception as e:
+            except Exception as e:
                     print(f"无法删除旧的视频文件: {e}")
             
             # 使用新生成的场景视频添加角色
@@ -305,7 +305,7 @@ def recompose_video_only(video_engine, character_image=None, font_name=None, fon
                         current_video = final_video_with_char
                     else:
                         output += f"添加会说话的角色图片失败，将使用原始视频继续处理\\n"
-                except Exception as e:
+            except Exception as e:
                     output += f"添加会说话角色图片过程中出错: {str(e)}\\n"
                     import traceback
                     error_details = traceback.format_exc()

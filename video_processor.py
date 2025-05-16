@@ -38,7 +38,7 @@ logger = get_logger("video_processor")
 class VideoProcessor(VideoProcessorService):
     """统一的视频处理器类，支持使用FFmpeg或MoviePy处理视频"""
     
-    def __init__(self, engine: str = "auto"):
+    def __init__(self, engine: str = "auto", effect_video_dir: Optional[str] = None):
         """初始化视频处理器
         
         Args:
@@ -46,6 +46,7 @@ class VideoProcessor(VideoProcessorService):
                    - "ffmpeg": 使用FFmpeg命令行工具
                    - "moviepy": 使用MoviePy库
                    - "auto": 自动选择可用的引擎，优先FFmpeg
+            effect_video_dir: 特效视频素材所在的目录 (可选)
         """
         self.engine = self._select_engine(engine)
         # 从配置中获取分辨率设置
@@ -53,6 +54,10 @@ class VideoProcessor(VideoProcessorService):
         self.fps = config.get("video", "fps", default=30)
         self.max_retries = config.get("processing", "max_retries", default=3)
         self.retry_delay = config.get("processing", "retry_delay", default=1.0)
+        self.effect_video_dir = effect_video_dir
+        if self.effect_video_dir:
+            logger.info(f"特效视频目录设置为: {self.effect_video_dir}")
+            
         logger.info(f"已选择 {self.engine.upper()} 作为图片合成视频引擎")
         logger.info(f"视频分辨率设置为: {self.resolution[0]}x{self.resolution[1]}")
     
@@ -410,7 +415,7 @@ class VideoProcessor(VideoProcessorService):
         
         return output_video
     
-    def create_video_with_scenes(self, key_scenes_file: str, base_video: str, output_video: str) -> str:
+    def create_video_with_scenes(self, key_scenes_file: str, base_video: str, output_video: str, use_fade_transitions: bool = True) -> str:
         """
         使用场景图片创建视频
         
@@ -418,6 +423,7 @@ class VideoProcessor(VideoProcessorService):
             key_scenes_file: 包含场景信息的JSON文件路径
             base_video: 基础视频文件路径
             output_video: 输出视频文件路径
+            use_fade_transitions: 是否为MoviePy场景切换使用淡入淡出效果
             
         Returns:
             str: 输出视频文件路径
@@ -430,7 +436,7 @@ class VideoProcessor(VideoProcessorService):
                 logger.error(f"使用FFmpeg处理场景视频失败: {str(e)}")
                 if MOVIEPY_AVAILABLE:
                     logger.info("尝试使用MoviePy作为备选...")
-                    return self._create_video_with_scenes_moviepy(key_scenes_file, base_video, output_video)
+                    return self._create_video_with_scenes_moviepy(key_scenes_file, base_video, output_video, use_fade_transitions=use_fade_transitions)
                 else:
                     raise
         else:  # moviepy
@@ -439,7 +445,7 @@ class VideoProcessor(VideoProcessorService):
                 return self._create_video_with_scenes_ffmpeg(key_scenes_file, base_video, output_video)
             
             try:
-                return self._create_video_with_scenes_moviepy(key_scenes_file, base_video, output_video)
+                return self._create_video_with_scenes_moviepy(key_scenes_file, base_video, output_video, use_fade_transitions=use_fade_transitions)
             except Exception as e:
                 logger.error(f"使用MoviePy处理场景视频失败: {str(e)}")
                 logger.info("尝试使用FFmpeg作为备选...")
@@ -568,7 +574,7 @@ class VideoProcessor(VideoProcessorService):
             logger.error(f"创建场景视频时发生错误: {str(e)}")
             raise VideoProcessingError("创建场景视频失败", details={"error": str(e)})
     
-    def _create_video_with_scenes_moviepy(self, key_scenes_file: str, base_video: str, output_video: str) -> str:
+    def _create_video_with_scenes_moviepy(self, key_scenes_file: str, base_video: str, output_video: str, use_fade_transitions: bool = True) -> str:
         """使用MoviePy和场景图片创建视频，添加电影级动画效果"""
         # 读取场景信息
         with open(key_scenes_file, "r", encoding="utf-8") as f:
@@ -741,16 +747,19 @@ class VideoProcessor(VideoProcessorService):
                 # 设置位置
                 img_clip = img_clip.set_position(pos_func)
                 
-                # 添加淡入淡出效果
-                # 计算淡入淡出时间 - 较短场景使用较短的淡入淡出时间
-                fade_duration = min(0.5, duration / 10)  # 最长0.5秒，或者场景时长的1/10
-                
-                # 应用淡入淡出效果
-                img_clip = img_clip.fadein(fade_duration).fadeout(fade_duration)
+                if use_fade_transitions:
+                    # 添加淡入淡出效果
+                    # 计算淡入淡出时间 - 较短场景使用较短的淡入淡出时间
+                    fade_duration = min(0.5, duration / 10)  # 最长0.5秒，或者场景时长的1/10
+                    
+                    # 应用淡入淡出效果
+                    img_clip = img_clip.fadein(fade_duration).fadeout(fade_duration)
+                    logger.info(f"已添加图片: {image_file} 效果类型: {effect_type} 淡入淡出: {fade_duration:.2f}秒")
+                else:
+                    logger.info(f"已添加图片: {image_file} 效果类型: {effect_type} (淡入淡出已禁用)")
                 
                 # 添加到剪辑列表
                 clips.append(img_clip)
-                logger.info(f"已添加图片: {image_file} 效果类型: {effect_type} 淡入淡出: {fade_duration:.2f}秒")
                 
             except Exception as e:
                 logger.error(f"处理图片 {scene.get('image_file', '未知')} 时出错: {e}")
@@ -1059,6 +1068,146 @@ class VideoProcessor(VideoProcessorService):
         except Exception as e:
             print(f"获取视频时长时出错: {e}")
             return 0
+
+    def _probe_video_info(self, video_path: str) -> Optional[Dict[str, Any]]:
+        """使用 ffprobe 获取视频信息 (宽度, 高度, 时长)"""
+        if not Path(video_path).exists():
+            logger.error(f"视频文件不存在，无法探测信息: {video_path}")
+            return None
+        try:
+            cmd = [
+                "ffprobe",
+                "-v", "error",
+                "-select_streams", "v:0",
+                "-show_entries", "stream=width,height:format=duration",
+                "-of", "json",
+                str(video_path) # Ensure video_path is string
+            ]
+            result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, text=True, encoding='utf-8', errors='replace')
+            data = json.loads(result.stdout)
+            
+            # Robustly get duration, check if 'format' and 'duration' keys exist
+            duration_str = data.get("format", {}).get("duration")
+            if duration_str is None:
+                # Fallback: try to get duration from the first video stream if format duration is missing
+                if data.get("streams") and data["streams"][0].get("duration"):
+                    duration_str = data["streams"][0]["duration"]
+                else: # If still no duration, log and raise error or return None
+                    logger.error(f"无法从 ffprobe 输出中获取视频时长: {video_path}")
+                    return None
+
+            info = {
+                "width": int(data["streams"][0]["width"]),
+                "height": int(data["streams"][0]["height"]),
+                "duration": float(duration_str)
+            }
+            logger.info(f"探测到视频 {Path(video_path).name} 信息: {info}")
+            return info
+        except json.JSONDecodeError as jde:
+            logger.error(f"解析 ffprobe JSON 输出失败 for {video_path}: {jde}. Output was: {result.stdout if 'result' in locals() else 'N/A'}")
+            return None
+        except Exception as e:
+            logger.error(f"使用 ffprobe 探测视频 {video_path} 信息失败: {e}")
+            return None
+
+    @error_handler(error_message="应用特效叠加失败")
+    def apply_effect_overlay(self, input_video_path: str, output_video_path: str, blend_mode: str = "screen") -> str:
+        """将特效视频叠加到输入视频上"""
+        input_path_obj = Path(input_video_path)
+        output_path_obj = Path(output_video_path)
+
+        if not self.effect_video_dir:
+            logger.warning("未设置特效视频目录，跳过特效叠加。")
+            if input_path_obj != output_path_obj:
+                 shutil.copy(str(input_path_obj), str(output_path_obj))
+            return str(output_path_obj)
+
+        effect_dir = Path(self.effect_video_dir)
+        if not effect_dir.is_dir():
+            logger.warning(f"特效视频目录 {self.effect_video_dir} 无效或不存在，跳过特效叠加。")
+            if input_path_obj != output_path_obj:
+                 shutil.copy(str(input_path_obj), str(output_path_obj))
+            return str(output_path_obj)
+
+        effect_videos = [f for f in effect_dir.iterdir() if f.is_file() and f.suffix.lower() in ['.mp4', '.mov', '.avi', '.mkv', '.webm']]
+        if not effect_videos:
+            logger.warning(f"特效视频目录 {self.effect_video_dir} 中没有找到支持的视频文件，跳过特效叠加。")
+            if input_path_obj != output_path_obj:
+                 shutil.copy(str(input_path_obj), str(output_path_obj))
+            return str(output_path_obj)
+
+        selected_effect_video = random.choice(effect_videos)
+        logger.info(f"选定的特效视频: {selected_effect_video}")
+
+        main_video_info = self._probe_video_info(str(input_path_obj))
+        if not main_video_info:
+            logger.error("无法获取主视频信息，跳过特效叠加。")
+            if input_path_obj != output_path_obj:
+                 shutil.copy(str(input_path_obj), str(output_path_obj))
+            return str(output_path_obj)
+            
+        main_w = main_video_info["width"]
+        main_h = main_video_info["height"]
+        main_duration = main_video_info["duration"]
+
+        filter_complex = (
+            f"[0:v]format=gbrp[main_gbrp];"  # Main video to GBRP
+            f"[1:v]scale={main_w}:{main_h}:force_original_aspect_ratio=increase,"
+            f"crop={main_w}:{main_h},"
+            f"format=gbrp[effect_gbrp];"     # Effect video scaled, cropped, then to GBRP
+            f"[main_gbrp][effect_gbrp]blend=all_mode={blend_mode}[blended_gbrp];" # Blend in GBRP
+            f"[blended_gbrp]format=yuv420p[out_v]"  # Convert final to yuv420p
+        )
+
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", str(input_path_obj),      
+            "-stream_loop", "-1",             
+            "-i", str(selected_effect_video), 
+            "-filter_complex", filter_complex,
+            "-map", "[out_v]",
+            "-map", "0:a?",                   
+            "-c:a", "copy",                   
+            "-c:v", "libx264",                
+            "-preset", "medium", # Using a general preset
+            "-crf", "23", # Constant Rate Factor for good quality/size balance
+            "-t", str(main_duration),         
+            str(output_path_obj)
+        ]
+
+        logger.info(f"准备执行特效叠加 FFmpeg 命令: {' '.join(cmd)}")
+        try:
+            # Ensure output directory exists
+            output_path_obj.parent.mkdir(parents=True, exist_ok=True)
+            
+            process = subprocess.run(cmd, capture_output=True, text=True, check=True, 
+                                     shell=(platform.system() == "Windows"), encoding='utf-8', errors='replace')
+            logger.info(f"FFmpeg特效叠加成功: {output_path_obj}")
+            if process.stdout:
+                logger.debug(f"FFmpeg stdout:\\n{process.stdout}")
+            # Stderr can contain warnings even on success
+            if process.stderr:
+                 logger.debug(f"FFmpeg stderr:\\n{process.stderr}")
+            return str(output_path_obj)
+        except subprocess.CalledProcessError as e:
+            logger.error(f"FFmpeg特效叠加失败. 返回码: {e.returncode}")
+            logger.error(f"FFmpeg command: {' '.join(e.cmd)}")
+            logger.error(f"FFmpeg stderr:\\n{e.stderr}")
+            if input_path_obj != output_path_obj:
+                try:
+                    shutil.copy(str(input_path_obj), str(output_path_obj))
+                    logger.info(f"特效叠加失败，已将原始视频复制到目标路径: {output_path_obj}")
+                except Exception as copy_err:
+                    logger.error(f"复制原始视频 {input_path_obj} 到 {output_path_obj} 失败: {copy_err}")
+            return str(input_path_obj) # Return original if copy fails or paths are same/target already has original
+        except Exception as e:
+            logger.error(f"执行FFmpeg特效叠加时发生意外错误: {e}")
+            if input_path_obj != output_path_obj:
+                try:
+                    shutil.copy(str(input_path_obj), str(output_path_obj))
+                except Exception as copy_err:
+                     logger.error(f"复制原始视频 {input_path_obj} 到 {output_path_obj} 失败: {copy_err}")
+            return str(input_path_obj)
 
 # 兼容旧版本的函数
 def create_base_video(audio_info_file, output_file, resolution=(1920, 1080)):
